@@ -90,6 +90,16 @@ L.AttackedBy(FAR, "Other_00000000-0000-0000-0000-000000000004", nil, "Fire", 3, 
 L.RollResult("x", GOB, P1, 1, 0, 0)
 M.events.DealtDamage({ Caster = { Uuid = { EntityUuid = u1 } }, Target = { Uuid = { EntityUuid = ug } },
     Hit = { TotalDamageDone = 9 }, Attack = {} })
+-- a userdata-like event: reading a field it lacks is an error (BeforeDealDamage has no Caster, live 2026-10-22)
+local strict = function(t) return setmetatable({}, { __index = function(_, k)
+    if t[k] == nil then error("Property does not exist: " .. k) end return t[k] end }) end
+local warned = 0
+local printWarning = Ext.Utils.PrintWarning
+Ext.Utils.PrintWarning = function() warned = warned + 1 end
+M.events.BeforeDealDamage(strict({ Hit = { DamageType = "Slashing" }, DamageSums = {} }))
+M.events.BeforeDealDamage(strict({ Hit = { DamageType = "Fire" }, DamageSums = {} }))
+Ext.Utils.PrintWarning = printWarning
+ok(warned == 0, "an event without Caster is read without errors")
 L.CombatEnded("C1")
 ok(FR.fight == nil, "the fight ends with its combat")
 
@@ -98,7 +108,10 @@ local f = lines(M.files[path])
 local kinds = {}
 for _, l in ipairs(f) do kinds[#kinds + 1] = l:match('"kind":"([^"]+)","t":') end   -- the record's own kind
 local seq = table.concat(kinds, ",")
-ok(seq == "meta,prep,prep,snapshot,CombatRoundStarted,AttackedBy,RollResult,DealtDamage,snapshot,end", "fight file: " .. seq)
+ok(seq == "meta,prep,prep,snapshot,CombatRoundStarted,AttackedBy,RollResult,DealtDamage,BeforeDealDamage,BeforeDealDamage,snapshot,end",
+    "fight file: " .. seq)
+local _, shapes = M.files[path]:gsub('"shape":', "")
+ok(shapes == 2, "each damage event's shape is dumped once (DealtDamage, BeforeDealDamage)")
 ok(M.files[path]:find('"name":"Lae\'zel"', 1, true) ~= nil, "characters are named")
 ok(M.files[path]:find('"amount":9') and not M.files[path]:find('"amount":3'), "only the party's combat is recorded")
 ok(M.files[path]:find('"name":"BLESS (shown)"', 1, true) ~= nil, "statuses and spells carry their shown names")
@@ -131,7 +144,8 @@ local page = obj("ls::UIWidget", { Name = "CombatLog", DataContext = dc })
 local cr = obj("Grid", { children = coll({ page }) })
 local root = obj("Border")
 function root:Find(n) return n == "ContentRoot" and cr or nil end
-Ext.UI = { GetRoot = function() return root end }
+local deferred = 0
+Ext.UI = { GetRoot = function() return root end, Defer = function(fn) deferred = deferred + 1 fn() end }
 FightRec = nil
 dofile(SRC)
 local CF = FightRec
@@ -143,6 +157,7 @@ C.events.Tick()
 local cl = M.files[logPath] or C.files[logPath]
 local k = {}
 for _, l in ipairs(lines(cl)) do k[#k + 1] = l:match('"kind":"([^"]+)","t":') end
+ok(deferred == 2, "the combat log is read inside Ext.UI.Defer")
 ok(table.concat(k, ",") == "probe,entry,entry", "combat log: probe then each entry once: " .. table.concat(k, ","))
 ok(cl:find("WIS 14 vs DC 13", 1, true) and cl:find("Attack 17 vs AC 15", 1, true), "entries keep their roll lines")
 local bad = false for _, t in ipairs(propsOn) do if t == "Button" or t == "Grid" then bad = true end end

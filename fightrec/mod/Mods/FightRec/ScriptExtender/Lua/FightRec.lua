@@ -305,17 +305,29 @@ if not FR.registered then
     on("UseFinished", 3, { "@char", "@item", "success" })
 
     -- The extender's damage events: the engine's hit and attack descriptions, the nearest record of a roll.
+    local function field(e, k)
+        local ok, v = pcall(function() return e[k] end)
+        return ok and v or nil
+    end
+    local shapes = {}
     local function entity(h)
         local ok, u = pcall(function() return h.Uuid.EntityUuid end)
         return ok and u or nil
     end
     for _, evname in ipairs({ "BeforeDealDamage", "DealDamage", "DealtDamage" }) do
         subscribe(evname, function(e)
-            local cu, tu = entity(e.Caster), entity(e.Target)
+            -- Fields differ per event (BeforeDealDamage has no Caster): a missing one is a Lua error, so read each safely.
+            local cu, tu = entity(field(e, "Caster")), entity(field(e, "Target"))
             local inv = involvement(cu, tu)
             if (cu or tu) and not inv then return end
-            record(evname, { caster = who(cu), target = who(tu), spell = FR.dump(e.SpellId, 3),
-                hit = FR.dump(e.Hit, 5), attack = FR.dump(e.Attack, 5), damage = FR.dump(e.DamageSums, 4) }, inv)
+            local data = { caster = who(cu), target = who(tu), spell = FR.dump(field(e, "SpellId"), 3),
+                hit = FR.dump(field(e, "Hit"), 5), attack = FR.dump(field(e, "Attack"), 5),
+                damage = FR.dump(field(e, "DamageSums"), 4) }
+            if not shapes[evname] then   -- the event's whole shape once per load, to find fields not read above
+                shapes[evname] = true
+                data.shape = FR.dump(e, 2)
+            end
+            record(evname, data, inv)
         end)
     end
 
@@ -459,8 +471,13 @@ if not FR.registered then
         local t = now()
         if t < FR.log.next then return end
         FR.log.next = t + FR.LOG_POLL_MS
-        local ok, err = pcall(FR.pollLog)
-        if not ok then Ext.Utils.PrintWarning("[FightRec] combat log: " .. tostring(err)) end
+        local function poll()
+            local ok, err = pcall(FR.pollLog)
+            if not ok then Ext.Utils.PrintWarning("[FightRec] combat log: " .. tostring(err)) end
+        end
+        -- Noesis is safe to read only in a deferred UI callback (the extender warns from Tick); older
+        -- extenders have no Defer.
+        if not (Ext.UI.Defer and pcall(Ext.UI.Defer, poll)) then poll() end
     end)
 end
 Ext.Utils.Print("[FightRec] client ready: combat log -> " .. FR.log.w.path)
