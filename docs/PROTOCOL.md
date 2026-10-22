@@ -128,6 +128,10 @@ get_map: all) and exposes `walk_toward(direction | objective | target)` = `nav.r
 | `dev.fairness_probe` | S | `{radius=30}` | Per-rule counts only: characters `{shown, off_stage_or_script_hidden, invisible, sneaking, not_perceived}`, items `{shown, hidden_or_invisible, carried, undiscovered_trap, secret_door, scenery, not_perceived}` |
 | `dev.perception_probe` | S | `{radius=30, reset?}` | Large-object (door/ladder/≥2 m tall or ≥1 m radius) perception: `{counts:{large, by_sight, by_ray, not_perceived, filtered, ray_shown_traps, ray_shown_secret_doors}, ray_only:[{uuid,name,kind,dist,height,radius}], stats, calibrated, ray_broken}`. `ray_shown_*` must be 0. `reset` re-enables a ray rule disabled by an error |
 | `state.timings` | S | – | Per-op latency in ms |
+| `rec.enable` | S | `{on=true}` | `Server/Recorder.lua`, for `tools/record_fight.py`: starts or stops the raw fight log (NOT fair-filtered, its own buffer, never `RPC.push`): `{on, seq, hooks:{name: "ok"\|error}}` |
+| `rec.since` | S | `{seq, limit=300}` | `{on, latest, records:[{seq,t,kind,data}]}` |
+| `combatlog.probe` | C | `{depth=2, collection?, widgets?}` | `Client/CombatLog.lua`: where the combat log page is and its DC's properties: `{found, how, type, chosen, props, collections:{name:{count, first, last}}}` |
+| `combatlog.read` | C | `{first=1, last?, depth=3, collection?}` | The log's entries as plain data: `{found, count, collection, entries:[{i, d}], cut?}` |
 
 ### Actions (`Server/Guard.lua`, `Server/Actions.lua`; owner: worker **act**)
 All take `{char: uuid, ...}` and return `{job}`. A job finishes `done` (with a short result), `failed`
