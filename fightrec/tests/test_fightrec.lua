@@ -51,7 +51,7 @@ local P1, GOB, FAR = "Laezel_00000000-0000-0000-0000-000000000001", "Goblin_0000
 local u1, ug, uf = P1:match("%x+%-.*$"), GOB:match("%x+%-.*$"), FAR:match("%x+%-.*$")
 local M = mockExt(true)
 local inCombat = {}
-M.entities = { [u1] = { Health = { Hp = 30, MaxHp = 34 }, EocLevel = { Level = 3 },
+M.entities = { [u1] = { Health = { Hp = 30, MaxHp = 34 }, Resistances = { AC = 14 }, EocLevel = { Level = 3 },
     StatusContainer = { Statuses = { a = "BLESS" } } } }
 Osi = {
     DB_Players = { Get = function() return { { P1 } } end },
@@ -91,12 +91,18 @@ L.AttackedBy(FAR, "Other_00000000-0000-0000-0000-000000000004", nil, "Fire", 3, 
 L.RollResult("x", GOB, P1, 1, 0, 0)
 -- a HitDesc Stringify only names: its members come from the extender's type info
 local hitDesc = setmetatable({}, {})
+local ability = setmetatable({}, { __index = function(_, k) if k == "Label" then return "Strength" end
+    if k == "Value" then return 1 end end })
 local rawtype = type
-type = function(x) if x == hitDesc then return "userdata" end return rawtype(x) end   -- plain Lua has no userdata
-local HIT = { TotalDamageDone = 9, AttackRollAbility = "Strength", HitWith = "Weapon" }
-Ext.Types = { GetObjectType = function(x) return x == hitDesc and "HitDesc" or nil end,
-    GetTypeInfo = function(n) return n == "HitDesc" and { Members = { TotalDamageDone = "int32",
-        AttackRollAbility = "AbilityId", HitWith = "HitWith" } } or nil end,
+type = function(x) if x == hitDesc or x == ability then return "userdata" end return rawtype(x) end   -- plain Lua has no userdata
+local HIT = { TotalDamageDone = 9, AttackRollAbility = ability, HitWith = "Weapon",
+    ConditionRolls = { { Difficulty = 13, Roll = { Result = { Total = 17, NaturalRoll = 14 } } } } }
+Ext.Types = { GetObjectType = function(x) return (x == hitDesc and "HitDesc") or (x == ability and "AbilityId") or nil end,
+    GetTypeInfo = function(n)
+        if n == "AbilityId" then return { Kind = "Enumeration" } end
+        return n == "HitDesc" and { Kind = "Object", Members = { TotalDamageDone = "int32",
+            AttackRollAbility = "AbilityId", HitWith = "HitWith", ConditionRolls = "Array" } } or nil
+    end,
     Serialize = function() error("not serializable") end }
 local hm = getmetatable(hitDesc) or {}
 hm.__index = function(_, k) return HIT[k] end
@@ -130,7 +136,10 @@ ok(M.files[path]:find('"amount":9') and not M.files[path]:find('"amount":3'), "o
 ok(M.files[path]:find('"name":"BLESS (shown)"', 1, true) ~= nil, "statuses and spells carry their shown names")
 ok(M.files[path]:find('"slot":"Melee Main Weapon"', 1, true) ~= nil, "the snapshot lists equipment")
 ok(M.files[path]:find('"turns":3', 1, true) ~= nil, "statuses carry their turns")
-ok(M.files[path]:find('"AttackRollAbility":"Strength"', 1, true) ~= nil, "a HitDesc is read member by member")
+ok(M.files[path]:find('"AttackRollAbility":{"label":"Strength","value":1}', 1, true) ~= nil,
+    "a HitDesc is read member by member, enums by label")
+ok(M.files[path]:find('"NaturalRoll":14', 1, true) ~= nil, "the roll is read all the way down")
+ok(M.files[path]:find('"ac":14', 1, true) ~= nil, "AC comes from Resistances")
 ok(not M.files[path]:find('00000000-0000-0000-0000-000000000000', 1, true), "the null GUID is no one")
 ok(M.files[path]:find('"hooks":', 1, true) ~= nil, "meta lists the hooks")
 local snap = f[5]
@@ -154,7 +163,9 @@ local function entry(t, rolls)
     return obj("ls::CombatLogEntry", { p = { Title = t, Rolls = coll(r), Btn = obj("Button", { text = "x" }) } })
 end
 local items = { entry("Lae'zel hits Goblin", { "Attack 17 vs AC 15", "9 Slashing" }) }
-local dc = obj("gui::DCCombatLog", { p = { Entries = coll(items), CurrentPlayer = obj("ls::VMPlayer") } })
+local logVM = obj("ls::VMCombatLog", { p = { Entries = coll(items), Unrelated = coll({}) } })
+local dc = obj("gui::DCCombatLog", { p = { CombatLogCollapsed = true, MarkCombatLogGroupEntrySeen = obj("ui::DeferredCommand"),
+    Data = obj("ls::VMData", { p = { CombatLog = logVM, Messages = coll({}) } }) } })
 -- live 2026-10-22: the log is not a ContentRoot page; it sits deeper in the visual tree
 local logEl = obj("ls::LSUserControl", { Name = "CombatLogPanel", DataContext = dc, VisualChildrenCount = 0 })
 local hud = obj("Grid", { Name = "Hud", DataContext = obj("gui::DCHud"), VisualChildrenCount = 1, vkids = { logEl } })
@@ -176,10 +187,12 @@ items[2] = entry("Goblin saves", { "WIS 14 vs DC 13" })
 C.mono = C.mono + 3000
 C.events.Tick()
 local cl = M.files[logPath] or C.files[logPath]
+local cl0 = cl
 local k = {}
 for _, l in ipairs(lines(cl)) do k[#k + 1] = l:match('"kind":"([^"]+)","t":') end
 ok(deferred == 2, "the combat log is read inside Ext.UI.Defer")
-ok(table.concat(k, ",") == "search,probe,entry,entry", "combat log: probe then each entry once: " .. table.concat(k, ","))
+ok(cl0:find('"chosen":"Data.CombatLog.Entries"', 1, true) ~= nil, "the entries are found below the DC's shared base")
+ok(table.concat(k, ",") == "search,probe,candidates,entry,entry", "combat log: probe then each entry once: " .. table.concat(k, ","))
 ok(cl:find("WIS 14 vs DC 13", 1, true) and cl:find("Attack 17 vs AC 15", 1, true), "entries keep their roll lines")
 local bad = false for _, t in ipairs(propsOn) do if t == "Button" or t == "Grid" then bad = true end end
 ok(not bad, "GetAllProperties never runs on an element")

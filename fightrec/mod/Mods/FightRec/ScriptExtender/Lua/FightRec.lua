@@ -52,7 +52,18 @@ function FR.reflect(x, depth)
     local ok, t = pcall(function() return Ext.Types.Serialize(x) end)
     if ok and type(t) == "table" then return FR.reflect(t, depth) end
     local okn, tn = pcall(function() return Ext.Types.GetObjectType(x) end)
-    local oki, ti = pcall(function() return Ext.Types.GetTypeInfo(okn and tn or nil) end)
+    tn = okn and tn or nil
+    if tn == "Entity" and FR.entityRef then return FR.entityRef(x) end
+    local oki, ti = pcall(function() return Ext.Types.GetTypeInfo(tn) end)
+    local kind = oki and ti and ti.Kind
+    if kind == "Enumeration" or kind == "Bitmask" then   -- live 2026-10-22: these came out as {"_type": "AbilityId"}
+        local okl, label = pcall(function() return x.Label end)
+        local okv, value = pcall(function() return x.Value end)
+        if okl and label ~= nil then return { label = tostring(label), value = okv and value or nil } end
+        local okls, labels = pcall(function() return x.Labels end)
+        if okls and labels ~= nil then return { labels = FR.reflect(labels, 1), value = okv and value or nil } end
+        return tostring(x)
+    end
     local members = oki and ti and ti.Members
     if members then
         local out = { _type = okn and tn or nil }
@@ -123,6 +134,11 @@ local function who(x)
     return { uuid = u, name = name(u) }
 end
 
+FR.entityRef = function(h)
+    local ok, u = pcall(function() return h.Uuid.EntityUuid end)
+    return ok and u and who(u) or tostring(h)
+end
+
 local function statName(id)
     return osi(function()
         local st = Ext.Stats.Get(id)
@@ -174,9 +190,8 @@ end
 -- Osiris slot names (live 2026-10-22: "MeleeMainHand" found no weapon on a character that hit with one).
 local SLOTS = { "Helmet", "Breast", "Cloak", "Melee Main Weapon", "Melee Offhand Weapon", "Ranged Main Weapon",
     "Ranged Offhand Weapon", "Ring", "Ring2", "Amulet", "Boots", "Gloves", "Underwear", "MusicalInstrument" }
--- Armor: AC (Stats has abilities, skills and proficiency but no AC).
-local COMPONENTS = { "Health", "EocLevel", "Classes", "Stats", "Armor", "ActionResources", "Experience",
-    "Resistances", "SpellBookPrepares" }
+local COMPONENTS = { "Health", "EocLevel", "Classes", "Stats", "ActionResources", "Experience", "Resistances",
+    "SpellBookPrepares" }
 
 function FR.character(u)
     local e = osi(Ext.Entity.Get, u)
@@ -188,6 +203,7 @@ function FR.character(u)
         return p and osi(Osi.IsEnemy, u, p) == 1 or nil
     end)()
     if not e then return out end
+    out.ac = osi(function() return e.Resistances.AC end)   -- AC lives in Resistances (Stats has none)
     for _, c in ipairs(COMPONENTS) do
         local ok, v = pcall(function() return e[c] end)
         if ok and v ~= nil then out[c] = FR.dump(v, 4) end
@@ -354,13 +370,13 @@ if not FR.registered then
     end
     for _, evname in ipairs({ "BeforeDealDamage", "DealDamage", "DealtDamage" }) do
         subscribe(evname, function(e)
-            -- Fields differ per event (BeforeDealDamage has no Caster): a missing one is a Lua error, so read each safely.
+            -- DamageSums is the old name of Attack (the extender warns on it). Fields differ per event (BeforeDealDamage has
+            -- no Caster): a missing one is a Lua error, so read each safely.
             local cu, tu = entity(field(e, "Caster")), entity(field(e, "Target"))
             local inv = involvement(cu, tu)
             if (cu or tu) and not inv then return end
-            local data = { caster = who(cu), target = who(tu), spell = FR.reflect(field(e, "SpellId"), 2),
-                hit = FR.reflect(field(e, "Hit"), 3), attack = FR.reflect(field(e, "Attack"), 3),
-                damage = FR.reflect(field(e, "DamageSums"), 3) }
+            local data = { caster = who(cu), target = who(tu), spell = FR.reflect(field(e, "SpellId"), 3),
+                hit = FR.reflect(field(e, "Hit"), 8), attack = FR.reflect(field(e, "Attack"), 4) }
             if not shapes[evname] then   -- the event's whole shape once per load, to find fields not read above
                 shapes[evname] = true
                 data.shape = FR.reflect(e, 1)
@@ -421,14 +437,28 @@ function FR.vmdump(obj, depth, budget)
     return out
 end
 
-FR.COLLECTIONS = { "CombatLogEntries", "Entries", "LogEntries", "CombatLog", "Items", "Lines", "Messages" }
-
 -- The combat log's DataContext (gui::DCCombatLog) among the pages under ContentRoot, read through the
 -- Children collection (VisualChild on a panel can crash while the UI thread rebuilds it).
 local function isLogDC(tn) return type(tn) == "string" and tn:lower():find("combatlog") ~= nil end
 
 FR.SEARCH_MS = 5000      -- how often the whole UI tree is searched while the log isn't found
 FR.SEARCH_BUDGET = 40000 -- elements visited per search
+
+-- An element's visual children; 0- or 1-based, learned on the first element that has any.
+local function children(el)
+    local out = {}
+    local n = tonumber(get(el, "VisualChildrenCount")) or 0
+    if n == 0 then return out end
+    if FR.childBase == nil then
+        local ok0, c0 = pcall(function() return el:VisualChild(0) end)
+        FR.childBase = (ok0 and c0 ~= nil) and 0 or 1
+    end
+    for i = FR.childBase, FR.childBase + n - 1 do
+        local ok, c = pcall(function() return el:VisualChild(i) end)
+        if ok and c ~= nil then out[#out + 1] = c end
+    end
+    return out
+end
 
 -- Breadth-first over the visual tree (only inside Ext.UI.Defer, the UI's own time) for an element whose
 -- DataContext or name says combat log. Live 2026-10-22: it is not a page under ContentRoot.
@@ -439,18 +469,10 @@ function FR.searchLog(root)
         queue[head] = nil
         head, seen = head + 1, seen + 1
         local dc = get(el, "DataContext")
-        if dc and (isLogDC(typeName(dc)) or isLogDC(get(el, "Name"))) then return dc, typeName(dc), get(el, "Name"), seen end
-        local n = tonumber(get(el, "VisualChildrenCount")) or 0
-        if n > 0 then
-            if FR.childBase == nil then   -- 0- or 1-based: learned on the first element with children
-                local ok0, c0 = pcall(function() return el:VisualChild(0) end)
-                FR.childBase = (ok0 and c0 ~= nil) and 0 or 1
-            end
-            for i = FR.childBase, FR.childBase + n - 1 do
-                local ok, c = pcall(function() return el:VisualChild(i) end)
-                if ok and c ~= nil then tail = tail + 1 queue[tail] = c end
-            end
+        if dc and (isLogDC(typeName(dc)) or isLogDC(get(el, "Name"))) then
+            return dc, typeName(dc), get(el, "Name"), seen, el
         end
+        for _, c in ipairs(children(el)) do tail = tail + 1 queue[tail] = c end
     end
     return nil, nil, nil, seen
 end
@@ -468,12 +490,13 @@ function FR.findLog()
         local dc = w and get(w, "DataContext")
         local tn = dc and typeName(dc)
         pages[#pages + 1] = { name = w and get(w, "Name"), dc = tn }
-        if isLogDC(tn) or isLogDC(w and get(w, "Name")) then L.dc = dc return dc end
+        if isLogDC(tn) or isLogDC(w and get(w, "Name")) then L.dc, L.el = dc, w return dc end
     end
     local t = now()
     if t < (L.searchNext or 0) then return nil end
     L.searchNext = t + ((L.searches or 0) < 3 and FR.SEARCH_MS or 6 * FR.SEARCH_MS)
-    local dc, tn, elName, seen = FR.searchLog(root)
+    local dc, tn, elName, seen, el = FR.searchLog(root)
+    L.el = el
     L.searches = (L.searches or 0) + 1
     if dc or L.searches <= 3 then   -- what was looked at, so a miss can be traced
         add(L.w, { t = t, kind = "search", data = { found = dc ~= nil, dc = tn, element = elName, visited = seen,
@@ -484,19 +507,72 @@ function FR.findLog()
     return dc
 end
 
-function FR.entries(dc)
-    local p = props(dc)
-    if FR.chosen and p[FR.chosen] then return FR.chosen, p[FR.chosen] end
-    for _, k in ipairs(FR.COLLECTIONS) do
-        if p[k] and isCollection(typeName(p[k])) then FR.chosen = k return k, p[k] end
-    end
-    for k, v in pairs(p) do
-        if isCollection(typeName(v)) and count(v) > 0 then
-            local tn = typeName(at(v, 1)) or ""
-            if tn:find("[Ll]og") or tn:find("[Ee]ntry") then FR.chosen = k return k, v end
+-- Where the entries can be. Live 2026-10-22 gui::DCCombatLog itself holds only settings and commands
+-- (CombatLogCollapsed, MarkCombatLogGroupEntrySeen, ...), so look further:
+--   * the ItemsSource of every list control inside the log panel;
+--   * view-model properties named like a log or its entries, from the DataContext down through its shared base
+--     (Data, CurrentPlayer), up to 4 levels.
+function FR.candidates(dc, el)
+    local out = {}
+    if el then
+        local q, h, tl, seen = { el }, 1, 1, 0
+        while q[h] and seen < 3000 do
+            local e = q[h]
+            q[h], h, seen = nil, h + 1, seen + 1
+            local src = get(e, "ItemsSource")
+            if src and isCollection(typeName(src)) then
+                out[#out + 1] = { path = "ItemsSource of " .. tostring(get(e, "Name") or "") .. " (" ..
+                    tostring(typeName(e)) .. ")", coll = src, items = true }
+            end
+            for _, c in ipairs(children(e)) do tl = tl + 1 q[tl] = c end
         end
     end
-    return nil
+    local q, h, tl, visited, budget = { { obj = dc, path = "", d = 0 } }, 1, 1, {}, 4000
+    while q[h] and budget > 0 do
+        local node = q[h]
+        q[h], h = nil, h + 1
+        for k, v in pairs(props(node.obj)) do
+            budget = budget - 1
+            local tn = typeName(v)
+            local path = node.path == "" and k or (node.path .. "." .. k)
+            local lk = tostring(k):lower()
+            if isCollection(tn) then
+                if lk:find("log") or lk:find("entr") then out[#out + 1] = { path = path, coll = v } end
+            elseif isViewModel(tn) and node.d < 4 then
+                local key = tostring(v)
+                if not visited[key] then visited[key] = true tl = tl + 1 q[tl] = { obj = v, path = path, d = node.d + 1 } end
+            end
+        end
+    end
+    return out
+end
+
+local function score(c)
+    local n, p = count(c.coll), c.path:lower()
+    return (p:find("combatlog") and 4 or 0) + (n > 0 and 2 or 0) + (c.items and 1 or 0)
+end
+
+function FR.entries(dc)
+    local L = FR.log
+    if L.chosen then return L.chosen.path, L.chosen.coll end
+    if now() < (L.nextCand or 0) then return nil end
+    local cands = FR.candidates(dc, L.el)
+    local best
+    for _, c in ipairs(cands) do if not best or score(c) > score(best) then best = c end end
+    local listed = {}
+    for i, c in ipairs(cands) do
+        if i > 40 then break end
+        listed[i] = { path = c.path, type = typeName(c.coll), count = count(c.coll),
+            first = count(c.coll) > 0 and typeName(at(c.coll, 1)) or nil }
+    end
+    L.candTries = (L.candTries or 0) + 1
+    if best or L.candTries <= 3 then
+        add(L.w, { t = now(), kind = "candidates", data = { chosen = best and best.path, list = listed } })
+        flush(L.w, true)
+    end
+    if not best then L.nextCand = now() + 10000 end   -- none yet (the log may still be empty): look again later
+    L.chosen = best
+    return best and best.path, best and best.coll
 end
 
 -- What the log's DataContext holds: written once, so a wrong guess above can be corrected.
@@ -529,7 +605,7 @@ function FR.pollLog()
         add(L.w, { t = now(), kind = "probe", data = FR.probe(dc), epoch = epoch() })
     end
     local name, coll = FR.entries(dc)
-    if not coll then L.dc = nil return end
+    if not coll then return end
     local n = count(coll)
     -- The log can drop old entries or be rebuilt (a load): if the last known entry moved, find it again.
     local from = L.count + 1
@@ -558,7 +634,7 @@ if not FR.registered then
         local function poll()
             local ok, err = pcall(FR.pollLog)
             if not ok then
-                FR.log.dc = nil   -- the panel may have been rebuilt (a load): find it again
+                FR.log.dc, FR.log.el, FR.log.chosen = nil, nil, nil   -- rebuilt (a load): find it again
                 Ext.Utils.PrintWarning("[FightRec] combat log: " .. tostring(err))
             end
         end
