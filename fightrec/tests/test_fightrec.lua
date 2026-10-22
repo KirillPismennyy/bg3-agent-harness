@@ -191,8 +191,8 @@ local cl0 = cl
 local k = {}
 for _, l in ipairs(lines(cl)) do k[#k + 1] = l:match('"kind":"([^"]+)","t":') end
 ok(deferred == 2, "the combat log is read inside Ext.UI.Defer")
-ok(cl0:find('"chosen":"Data.CombatLog.Entries"', 1, true) ~= nil, "the entries are found below the DC's shared base")
-ok(table.concat(k, ",") == "search,probe,candidates,entry,entry", "combat log: probe then each entry once: " .. table.concat(k, ","))
+ok(cl0:find('"chosen":"Data.CombatLog.Entries"', 1, true) ~= nil and cl0:find('"element":"CombatLogPanel"', 1, true) ~= nil, "the entries are found below the DC's shared base")
+ok(table.concat(k, ",") == "locate,entry,entry", "combat log: probe then each entry once: " .. table.concat(k, ","))
 ok(cl:find("WIS 14 vs DC 13", 1, true) and cl:find("Attack 17 vs AC 15", 1, true), "entries keep their roll lines")
 local bad = false for _, t in ipairs(propsOn) do if t == "Button" or t == "Grid" then bad = true end end
 ok(not bad, "GetAllProperties never runs on an element")
@@ -204,6 +204,22 @@ C.events.Tick()
 cl = C.files[logPath]
 local _, nSaves = cl:gsub("Goblin saves", "")
 ok(nSaves == 1 and cl:find("Shadowheart misses", 1, true) ~= nil, "a shifted log resyncs without duplicates")
+
+-- no entries anywhere (live 2026-10-22, third run): the panel's shape is written down instead
+local C2 = mockExt(false)
+local bare = obj("gui::DCCombatLog", { p = { CombatLogCollapsed = true, Flee = obj("ui::DeferredCommand") } })
+local btn = obj("ls::LSButton", { Name = "Expand", VisualChildrenCount = 0 })
+local panel = obj("ls::LSUserControl", { Name = "CombatLog", DataContext = bare, VisualChildrenCount = 1, vkids = { btn } })
+function panel:VisualChild(i) return self.vkids[i] end
+local root2 = obj("Border", { VisualChildrenCount = 1, vkids = { panel } })
+function root2:VisualChild(i) return self.vkids[i] end
+Ext.UI = { GetRoot = function() return root2 end, Defer = function(fn) fn() end }
+FightRec = nil
+dofile(SRC)
+C2.events.Tick()
+local cl2 = C2.files["FightRec/" .. FightRec.stamp .. "-combatlog.jsonl"] or ""
+ok(cl2:find('"kind":"shape"', 1, true) and cl2:find('"CombatLogCollapsed":true', 1, true)
+    and cl2:find('"name":"Expand"', 1, true), "no entries: the panel's members and elements are written down")
 
 print(string.format("%d passed, %d failed", pass, fail))
 if fail > 0 then os.exit(1) end

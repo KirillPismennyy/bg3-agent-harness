@@ -437,11 +437,8 @@ function FR.vmdump(obj, depth, budget)
     return out
 end
 
--- The combat log's DataContext (gui::DCCombatLog) among the pages under ContentRoot, read through the
--- Children collection (VisualChild on a panel can crash while the UI thread rebuilds it).
 local function isLogDC(tn) return type(tn) == "string" and tn:lower():find("combatlog") ~= nil end
 
-FR.SEARCH_MS = 5000      -- how often the whole UI tree is searched while the log isn't found
 FR.SEARCH_BUDGET = 40000 -- elements visited per search
 
 -- An element's visual children; 0- or 1-based, learned on the first element that has any.
@@ -460,58 +457,38 @@ local function children(el)
     return out
 end
 
--- Breadth-first over the visual tree (only inside Ext.UI.Defer, the UI's own time) for an element whose
--- DataContext or name says combat log. Live 2026-10-22: it is not a page under ContentRoot.
+-- Breadth-first over the visual tree (only inside Ext.UI.Defer, the UI's own time) for elements whose DataContext
+-- or name says combat log, without descending into a match (its children share its DataContext). Live
+-- 2026-10-22: the log is not a page under ContentRoot, and there may be more than one (collapsed / expanded).
 function FR.searchLog(root)
-    local queue, head, tail, seen = { root }, 1, 1, 0
-    while queue[head] and seen < FR.SEARCH_BUDGET do
+    local queue, head, tail, seen, found = { root }, 1, 1, 0, {}
+    while queue[head] and seen < FR.SEARCH_BUDGET and #found < 10 do
         local el = queue[head]
         queue[head] = nil
         head, seen = head + 1, seen + 1
         local dc = get(el, "DataContext")
-        if dc and (isLogDC(typeName(dc)) or isLogDC(get(el, "Name"))) then
-            return dc, typeName(dc), get(el, "Name"), seen, el
+        local tn = dc and typeName(dc)
+        if dc and (isLogDC(tn) or isLogDC(get(el, "Name"))) then
+            found[#found + 1] = { el = el, dc = dc, dcType = tn, name = get(el, "Name"), type = typeName(el) }
+        else
+            for _, c in ipairs(children(el)) do tail = tail + 1 queue[tail] = c end
         end
-        for _, c in ipairs(children(el)) do tail = tail + 1 queue[tail] = c end
     end
-    return nil, nil, nil, seen
+    return found, seen
 end
 
-function FR.findLog()
-    local L = FR.log
-    if L.dc then return L.dc end
-    local root = get(Ext.UI, "GetRoot") and Ext.UI.GetRoot()
-    if not root then return nil end
-    local cr = get(root, "Find") and root:Find("ContentRoot")
-    local kids = cr and select(2, pcall(function() return cr:GetProperty("Children") end)) or nil
-    local pages = {}
-    for i = 1, count(kids) do
-        local w = at(kids, i)
-        local dc = w and get(w, "DataContext")
-        local tn = dc and typeName(dc)
-        pages[#pages + 1] = { name = w and get(w, "Name"), dc = tn }
-        if isLogDC(tn) or isLogDC(w and get(w, "Name")) then L.dc, L.el = dc, w return dc end
-    end
-    local t = now()
-    if t < (L.searchNext or 0) then return nil end
-    L.searchNext = t + ((L.searches or 0) < 3 and FR.SEARCH_MS or 6 * FR.SEARCH_MS)
-    local dc, tn, elName, seen, el = FR.searchLog(root)
-    L.el = el
-    L.searches = (L.searches or 0) + 1
-    if dc or L.searches <= 3 then   -- what was looked at, so a miss can be traced
-        add(L.w, { t = t, kind = "search", data = { found = dc ~= nil, dc = tn, element = elName, visited = seen,
-            pages = L.searches == 1 and pages or nil } })
-        flush(L.w, true)
-    end
-    L.dc = dc
-    return dc
+local LOGGY = { "log", "entr", "message", "history", "line" }
+local function loggy(k)
+    k = tostring(k):lower()
+    for _, w in ipairs(LOGGY) do if k:find(w, 1, true) then return true end end
+    return false
 end
 
 -- Where the entries can be. Live 2026-10-22 gui::DCCombatLog itself holds only settings and commands
 -- (CombatLogCollapsed, MarkCombatLogGroupEntrySeen, ...), so look further:
 --   * the ItemsSource of every list control inside the log panel;
---   * view-model properties named like a log or its entries, from the DataContext down through its shared base
---     (Data, CurrentPlayer), up to 4 levels.
+--   * view-model properties named like a log, entries, messages or lines, from the DataContext down through its
+--     shared base (Data, CurrentPlayer), up to 4 levels.
 function FR.candidates(dc, el)
     local out = {}
     if el then
@@ -531,13 +508,16 @@ function FR.candidates(dc, el)
     while q[h] and budget > 0 do
         local node = q[h]
         q[h], h = nil, h + 1
-        for k, v in pairs(props(node.obj)) do
+        local p = props(node.obj)
+        if node.d == 0 then   -- the shared base, in case GetAllProperties leaves inherited members out
+            for _, k in ipairs({ "Data", "CurrentPlayer" }) do if p[k] == nil then p[k] = get(node.obj, k) end end
+        end
+        for k, v in pairs(p) do
             budget = budget - 1
             local tn = typeName(v)
             local path = node.path == "" and k or (node.path .. "." .. k)
-            local lk = tostring(k):lower()
             if isCollection(tn) then
-                if lk:find("log") or lk:find("entr") then out[#out + 1] = { path = path, coll = v } end
+                if loggy(k) then out[#out + 1] = { path = path, coll = v } end
             elseif isViewModel(tn) and node.d < 4 then
                 local key = tostring(v)
                 if not visited[key] then visited[key] = true tl = tl + 1 q[tl] = { obj = v, path = path, d = node.d + 1 } end
@@ -552,59 +532,79 @@ local function score(c)
     return (p:find("combatlog") and 4 or 0) + (n > 0 and 2 or 0) + (c.items and 1 or 0)
 end
 
-function FR.entries(dc)
-    local L = FR.log
-    if L.chosen then return L.chosen.path, L.chosen.coll end
-    if now() < (L.nextCand or 0) then return nil end
-    local cands = FR.candidates(dc, L.el)
-    local best
-    for _, c in ipairs(cands) do if not best or score(c) > score(best) then best = c end end
-    local listed = {}
-    for i, c in ipairs(cands) do
-        if i > 40 then break end
-        listed[i] = { path = c.path, type = typeName(c.coll), count = count(c.coll),
-            first = count(c.coll) > 0 and typeName(at(c.coll, 1)) or nil }
+-- What a log panel looks like when no entries were found: its DataContext's members and the first elements
+-- below it, so the next version can be pointed at the right place.
+function FR.shape(m)
+    local members = {}
+    local p = props(m.dc)
+    for _, k in ipairs({ "Data", "CurrentPlayer" }) do if p[k] == nil then p[k] = get(m.dc, k) end end
+    for k, v in pairs(p) do
+        local tn = typeName(v)
+        if not (tn and tn:find("Command")) then
+            members[k] = isCollection(tn) and (tn .. "[" .. count(v) .. "]") or tn or v
+        end
     end
-    L.candTries = (L.candTries or 0) + 1
-    if best or L.candTries <= 3 then
-        add(L.w, { t = now(), kind = "candidates", data = { chosen = best and best.path, list = listed } })
-        flush(L.w, true)
+    local tree, q, h, tl = {}, { { e = m.el, d = 0 } }, 1, 1
+    while q[h] and #tree < 150 do
+        local n = q[h]
+        q[h], h = nil, h + 1
+        local src = get(n.e, "ItemsSource")
+        local dc = get(n.e, "DataContext")
+        tree[#tree + 1] = { d = n.d, type = typeName(n.e), name = get(n.e, "Name"),
+            dc = dc ~= m.dc and typeName(dc) or nil,
+            items = src and (tostring(typeName(src)) .. "[" .. count(src) .. "]") or nil }
+        for _, c in ipairs(children(n.e)) do tl = tl + 1 q[tl] = { e = c, d = n.d + 1 } end
     end
-    if not best then L.nextCand = now() + 10000 end   -- none yet (the log may still be empty): look again later
-    L.chosen = best
-    return best and best.path, best and best.coll
+    return { element = m.name, type = m.type, dc = m.dcType, members = members, tree = tree }
 end
 
--- What the log's DataContext holds: written once, so a wrong guess above can be corrected.
-function FR.probe(dc)
-    local out, budget = {}, { n = 3000 }
-    for k, v in pairs(props(dc)) do
-        if not SKIP[k] then
-            local tn = typeName(v)
-            if isCollection(tn) then
-                local n = count(v)
-                out[k] = { type = tn, count = n, first = n > 0 and FR.vmdump(at(v, 1), 3, budget) or nil }
-            else
-                out[k] = tn or v
+-- path, collection of the log's entries, or nil; searched again every 10 s until found (the expanded log may
+-- appear later).
+function FR.locate()
+    local L = FR.log
+    if L.chosen then return L.chosen.path, L.chosen.coll end
+    local t = now()
+    if t < (L.nextTry or 0) then return nil end
+    L.nextTry = t + 10000
+    local root = get(Ext.UI, "GetRoot") and Ext.UI.GetRoot()
+    if not root then return nil end
+    local matches, seen = FR.searchLog(root)
+    local best, listed = nil, {}
+    for _, m in ipairs(matches) do
+        for _, c in ipairs(FR.candidates(m.dc, m.el)) do
+            c.panel = m.name
+            if not best or score(c) > score(best) then best = c end
+            if #listed < 40 then
+                listed[#listed + 1] = { panel = m.name, path = c.path, type = typeName(c.coll), count = count(c.coll),
+                    first = count(c.coll) > 0 and typeName(at(c.coll, 1)) or nil }
             end
         end
     end
-    return out
+    L.tries = (L.tries or 0) + 1
+    local path = best and best.path
+    if L.tries <= 3 or path ~= L.lastPath then
+        L.lastPath = path
+        local panels = {}
+        for i, m in ipairs(matches) do panels[i] = { element = m.name, type = m.type, dc = m.dcType } end
+        add(L.w, { t = t, kind = "locate", data = { visited = seen, panels = panels, candidates = listed,
+            chosen = best and best.path } })
+        if not best and L.tries <= 2 then
+            for i, m in ipairs(matches) do if i <= 3 then add(L.w, { t = t, kind = "shape", data = FR.shape(m) }) end end
+        end
+        flush(L.w, true)
+    end
+    -- Keep it only once it has entries: an empty one may be the wrong list, so keep looking every 10 s.
+    L.chosen = best and count(best.coll) > 0 and best or nil
+    return best and best.path, best and best.coll
 end
 
-FR.log = FR.log or { w = writer("combatlog"), count = 0, lastSig = nil, probed = false, next = 0 }
+FR.log = FR.log or { w = writer("combatlog"), count = 0, lastSig = nil, next = 0 }
 
 local function sig(d) local ok, s = pcall(stringify, d) return ok and s or "?" end
 
 function FR.pollLog()
     local L = FR.log
-    local dc = FR.findLog()
-    if not dc then return end
-    if not L.probed then
-        L.probed = true
-        add(L.w, { t = now(), kind = "probe", data = FR.probe(dc), epoch = epoch() })
-    end
-    local name, coll = FR.entries(dc)
+    local name, coll = FR.locate()
     if not coll then return end
     local n = count(coll)
     -- The log can drop old entries or be rebuilt (a load): if the last known entry moved, find it again.
@@ -634,7 +634,7 @@ if not FR.registered then
         local function poll()
             local ok, err = pcall(FR.pollLog)
             if not ok then
-                FR.log.dc, FR.log.el, FR.log.chosen = nil, nil, nil   -- rebuilt (a load): find it again
+                FR.log.chosen, FR.log.nextTry = nil, 0   -- rebuilt (a load): find it again
                 Ext.Utils.PrintWarning("[FightRec] combat log: " .. tostring(err))
             end
         end
