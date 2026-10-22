@@ -221,5 +221,23 @@ local cl2 = C2.files["FightRec/" .. FightRec.stamp .. "-combatlog.jsonl"] or ""
 ok(cl2:find('"kind":"shape"', 1, true) and cl2:find('"CombatLogCollapsed":true', 1, true)
     and cl2:find('"name":"Expand"', 1, true), "no entries: the panel's members and elements are written down")
 
+-- ... and its on-screen text is read instead, new lines only
+local function tb(text) return obj("TextBlock", { text = text, VisualChildrenCount = 0 }) end
+local list = obj("StackPanel", { VisualChildrenCount = 2, vkids = { tb("Imp attacks cust: Hit (18 vs AC 14)"), tb("Fire 2") } })
+function list:VisualChild(i) return self.vkids[i] end
+panel.vkids = { tb("Combat Log"), list, btn }
+panel.VisualChildrenCount = 3
+C2.mono = C2.mono + 20000
+C2.events.Tick()
+list.vkids = { tb("Fire 2"), tb("Imp attacks cust: Miss (5 vs AC 14)"), tb("Fire 2") }
+list.VisualChildrenCount = 3
+C2.mono = C2.mono + 3000   -- past FLUSH_MS
+C2.events.Tick()
+cl2 = C2.files["FightRec/" .. FightRec.stamp .. "-combatlog.jsonl"] or ""
+local got = {}
+for l in cl2:gmatch("[^\n]+") do if l:find('"kind":"line"', 1, true) then got[#got + 1] = l:match('"text":"(.-)"') end end
+ok(table.concat(got, " / ") == "Combat Log / Imp attacks cust: Hit (18 vs AC 14) / Fire 2 / Imp attacks cust: Miss (5 vs AC 14) / Fire 2",
+    "on-screen lines are recorded once each: " .. table.concat(got, " / "))
+
 print(string.format("%d passed, %d failed", pass, fail))
 if fail > 0 then os.exit(1) end

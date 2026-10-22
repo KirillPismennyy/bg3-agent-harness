@@ -569,6 +569,7 @@ function FR.locate()
     local root = get(Ext.UI, "GetRoot") and Ext.UI.GetRoot()
     if not root then return nil end
     local matches, seen = FR.searchLog(root)
+    L.panels = matches   -- read as on-screen text while no entry list is found (FR.pollText)
     local best, listed = nil, {}
     for _, m in ipairs(matches) do
         for _, c in ipairs(FR.candidates(m.dc, m.el)) do
@@ -589,7 +590,12 @@ function FR.locate()
         add(L.w, { t = t, kind = "locate", data = { visited = seen, panels = panels, candidates = listed,
             chosen = best and best.path } })
         if not best and L.tries <= 2 then
-            for i, m in ipairs(matches) do if i <= 3 then add(L.w, { t = t, kind = "shape", data = FR.shape(m) }) end end
+            for i, m in ipairs(matches) do   -- live 2026-10-22: shape raised and wrote nothing; now it can't
+                if i <= 3 then
+                    local ok, shape = pcall(FR.shape, m)
+                    add(L.w, { t = t, kind = "shape", data = ok and shape or { error = tostring(shape) } })
+                end
+            end
         end
         flush(L.w, true)
     end
@@ -602,10 +608,78 @@ FR.log = FR.log or { w = writer("combatlog"), count = 0, lastSig = nil, next = 0
 
 local function sig(d) local ok, s = pcall(stringify, d) return ok and s or "?" end
 
+-- The text an element shows: a TextBlock's Text, ToString, or its inlines (formatted game text).
+local function inlineText(inl, depth)
+    if inl == nil or depth > 6 then return "" end
+    local parts = {}
+    for i = 1, math.min(count(inl), 200) do
+        local x = at(inl, i)
+        local tx = get(x, "Text")
+        if type(tx) == "string" then parts[#parts + 1] = tx
+        else parts[#parts + 1] = inlineText(get(x, "Inlines"), depth + 1) end
+    end
+    return table.concat(parts)
+end
+
+local function elementText(el)
+    local tn = typeName(el) or ""
+    if not tn:find("TextBlock") then return nil end
+    local s = get(el, "Text")
+    if type(s) ~= "string" or s == "" then
+        local ok, t = pcall(function() return el:ToString() end)
+        s = ok and type(t) == "string" and t or ""
+    end
+    if s == "" then s = inlineText(get(el, "Inlines"), 0) end
+    s = s:gsub("<[^>]*>", ""):gsub("%s+", " "):gsub("^ ", ""):gsub(" $", "")
+    return s ~= "" and s or nil
+end
+
+-- The visible text lines of a panel, in on-screen (depth-first) order.
+function FR.panelText(el)
+    local lines, stack, seen = {}, { el }, 0
+    while #stack > 0 and seen < 5000 do
+        local e = table.remove(stack)
+        seen = seen + 1
+        local s = elementText(e)
+        if s then lines[#lines + 1] = s end
+        local kids = children(e)
+        for i = #kids, 1, -1 do stack[#stack + 1] = kids[i] end
+    end
+    return lines
+end
+
+-- New lines since the last read: lines shown now beyond how often they were shown before. Not a tail match:
+-- static labels (headers, buttons) can sit after the entries, and the list scrolls and virtualizes. An identical
+-- line that replaces one scrolled away is missed.
+function FR.newLines(prev, cur)
+    local before, now_, out = {}, {}, {}
+    for _, l in ipairs(prev) do before[l] = (before[l] or 0) + 1 end
+    for _, l in ipairs(cur) do
+        now_[l] = (now_[l] or 0) + 1
+        if now_[l] > (before[l] or 0) then out[#out + 1] = l end
+    end
+    return out, #prev == 0 and "first" or "new"
+end
+
+-- Fallback while no entry list is found: the log panels' on-screen text (the log must be open and expanded).
+function FR.pollText()
+    local L = FR.log
+    for i, m in ipairs(L.panels or {}) do
+        L.text = L.text or {}
+        local cur = FR.panelText(m.el)
+        local new, how = FR.newLines(L.text[i] or {}, cur)
+        L.text[i] = cur
+        for _, line in ipairs(new) do
+            add(L.w, { t = now(), kind = "line", data = { text = line, panel = m.name, how = how } })
+        end
+    end
+    flush(L.w)
+end
+
 function FR.pollLog()
     local L = FR.log
     local name, coll = FR.locate()
-    if not coll then return end
+    if not coll then return FR.pollText() end
     local n = count(coll)
     -- The log can drop old entries or be rebuilt (a load): if the last known entry moved, find it again.
     local from = L.count + 1
