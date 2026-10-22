@@ -38,6 +38,37 @@ function FR.dump(x, depth)
     return ok2 and p or s
 end
 
+-- Engine objects Stringify only names ("HitDesc (000000151412A8F8)", live 2026-10-22): read every member the
+-- extender's type info lists, recursively. Ext.Types.Serialize first, where the type supports it.
+function FR.reflect(x, depth)
+    depth = depth or 4
+    local tx = type(x)
+    if tx == "table" then
+        local out = {}
+        for k, v in pairs(x) do out[k] = depth > 0 and FR.reflect(v, depth - 1) or tostring(v) end
+        return out
+    end
+    if tx ~= "userdata" then return x end
+    local ok, t = pcall(function() return Ext.Types.Serialize(x) end)
+    if ok and type(t) == "table" then return FR.reflect(t, depth) end
+    local okn, tn = pcall(function() return Ext.Types.GetObjectType(x) end)
+    local oki, ti = pcall(function() return Ext.Types.GetTypeInfo(okn and tn or nil) end)
+    local members = oki and ti and ti.Members
+    if members then
+        local out = { _type = okn and tn or nil }
+        pcall(function()
+            for k in pairs(members) do
+                local okv, v = pcall(function() return x[k] end)
+                if okv then out[k] = depth > 0 and FR.reflect(v, depth - 1) or tostring(v) end
+            end
+        end)
+        return out
+    end
+    local list, okp = {}, pcall(function() for k, v in pairs(x) do list[k] = depth > 0 and FR.reflect(v, depth - 1) or tostring(v) end end)
+    if okp and next(list) ~= nil then return list end
+    return tostring(x)
+end
+
 -- A JSONL file rewritten whole on flush (there is no append), at most every FLUSH_MS.
 local function writer(name)
     return { path = FR.DIR .. FR.stamp .. "-" .. name .. ".jsonl", lines = {}, dirty = false, at = 0 }
@@ -69,7 +100,9 @@ end
 
 local function uuid(s)
     if type(s) ~= "string" then return nil end
-    return s:match("%x+%-%x+%-%x+%-%x+%-%x+$")
+    local u = s:match("%x+%-%x+%-%x+%-%x+%-%x+$")
+    if u == "00000000-0000-0000-0000-000000000000" then return nil end   -- the null GUID: no one
+    return u
 end
 
 local names = {}
@@ -83,7 +116,10 @@ end
 
 local function who(x)
     local u = uuid(x)
-    if not u then return x ~= nil and tostring(x) or nil end
+    if not u then
+        if x == nil or tostring(x):find("00000000-0000-0000-0000-000000000000", 1, true) then return nil end
+        return tostring(x)
+    end
     return { uuid = u, name = name(u) }
 end
 
@@ -135,10 +171,12 @@ local function involvement(...)
 end
 
 -- One character's state: what the character sheet, examine panel and portrait show, as the engine holds it.
-local SLOTS = { "Helmet", "Breast", "Cloak", "MeleeMainHand", "MeleeOffHand", "RangedMainHand", "RangedOffHand",
-    "Ring", "Ring2", "Amulet", "Boots", "Gloves", "Underwear", "MusicalInstrument" }
-local COMPONENTS = { "Health", "EocLevel", "Classes", "Stats", "ActionResources", "Experience", "Resistances",
-    "SpellBookPrepares" }
+-- Osiris slot names (live 2026-10-22: "MeleeMainHand" found no weapon on a character that hit with one).
+local SLOTS = { "Helmet", "Breast", "Cloak", "Melee Main Weapon", "Melee Offhand Weapon", "Ranged Main Weapon",
+    "Ranged Offhand Weapon", "Ring", "Ring2", "Amulet", "Boots", "Gloves", "Underwear", "MusicalInstrument" }
+-- Armor: AC (Stats has abilities, skills and proficiency but no AC).
+local COMPONENTS = { "Health", "EocLevel", "Classes", "Stats", "Armor", "ActionResources", "Experience",
+    "Resistances", "SpellBookPrepares" }
 
 function FR.character(u)
     local e = osi(Ext.Entity.Get, u)
@@ -320,12 +358,12 @@ if not FR.registered then
             local cu, tu = entity(field(e, "Caster")), entity(field(e, "Target"))
             local inv = involvement(cu, tu)
             if (cu or tu) and not inv then return end
-            local data = { caster = who(cu), target = who(tu), spell = FR.dump(field(e, "SpellId"), 3),
-                hit = FR.dump(field(e, "Hit"), 5), attack = FR.dump(field(e, "Attack"), 5),
-                damage = FR.dump(field(e, "DamageSums"), 4) }
+            local data = { caster = who(cu), target = who(tu), spell = FR.reflect(field(e, "SpellId"), 2),
+                hit = FR.reflect(field(e, "Hit"), 3), attack = FR.reflect(field(e, "Attack"), 3),
+                damage = FR.reflect(field(e, "DamageSums"), 3) }
             if not shapes[evname] then   -- the event's whole shape once per load, to find fields not read above
                 shapes[evname] = true
-                data.shape = FR.dump(e, 2)
+                data.shape = FR.reflect(e, 1)
             end
             record(evname, data, inv)
         end)
@@ -387,17 +425,63 @@ FR.COLLECTIONS = { "CombatLogEntries", "Entries", "LogEntries", "CombatLog", "It
 
 -- The combat log's DataContext (gui::DCCombatLog) among the pages under ContentRoot, read through the
 -- Children collection (VisualChild on a panel can crash while the UI thread rebuilds it).
+local function isLogDC(tn) return type(tn) == "string" and tn:lower():find("combatlog") ~= nil end
+
+FR.SEARCH_MS = 5000      -- how often the whole UI tree is searched while the log isn't found
+FR.SEARCH_BUDGET = 40000 -- elements visited per search
+
+-- Breadth-first over the visual tree (only inside Ext.UI.Defer, the UI's own time) for an element whose
+-- DataContext or name says combat log. Live 2026-10-22: it is not a page under ContentRoot.
+function FR.searchLog(root)
+    local queue, head, tail, seen = { root }, 1, 1, 0
+    while queue[head] and seen < FR.SEARCH_BUDGET do
+        local el = queue[head]
+        queue[head] = nil
+        head, seen = head + 1, seen + 1
+        local dc = get(el, "DataContext")
+        if dc and (isLogDC(typeName(dc)) or isLogDC(get(el, "Name"))) then return dc, typeName(dc), get(el, "Name"), seen end
+        local n = tonumber(get(el, "VisualChildrenCount")) or 0
+        if n > 0 then
+            if FR.childBase == nil then   -- 0- or 1-based: learned on the first element with children
+                local ok0, c0 = pcall(function() return el:VisualChild(0) end)
+                FR.childBase = (ok0 and c0 ~= nil) and 0 or 1
+            end
+            for i = FR.childBase, FR.childBase + n - 1 do
+                local ok, c = pcall(function() return el:VisualChild(i) end)
+                if ok and c ~= nil then tail = tail + 1 queue[tail] = c end
+            end
+        end
+    end
+    return nil, nil, nil, seen
+end
+
 function FR.findLog()
+    local L = FR.log
+    if L.dc then return L.dc end
     local root = get(Ext.UI, "GetRoot") and Ext.UI.GetRoot()
-    local cr = root and get(root, "Find") and root:Find("ContentRoot")
+    if not root then return nil end
+    local cr = get(root, "Find") and root:Find("ContentRoot")
     local kids = cr and select(2, pcall(function() return cr:GetProperty("Children") end)) or nil
+    local pages = {}
     for i = 1, count(kids) do
         local w = at(kids, i)
         local dc = w and get(w, "DataContext")
         local tn = dc and typeName(dc)
-        if tn == "gui::DCCombatLog" or get(w, "Name") == "CombatLog" then return dc end
+        pages[#pages + 1] = { name = w and get(w, "Name"), dc = tn }
+        if isLogDC(tn) or isLogDC(w and get(w, "Name")) then L.dc = dc return dc end
     end
-    return nil
+    local t = now()
+    if t < (L.searchNext or 0) then return nil end
+    L.searchNext = t + ((L.searches or 0) < 3 and FR.SEARCH_MS or 6 * FR.SEARCH_MS)
+    local dc, tn, elName, seen = FR.searchLog(root)
+    L.searches = (L.searches or 0) + 1
+    if dc or L.searches <= 3 then   -- what was looked at, so a miss can be traced
+        add(L.w, { t = t, kind = "search", data = { found = dc ~= nil, dc = tn, element = elName, visited = seen,
+            pages = L.searches == 1 and pages or nil } })
+        flush(L.w, true)
+    end
+    L.dc = dc
+    return dc
 end
 
 function FR.entries(dc)
@@ -445,7 +529,7 @@ function FR.pollLog()
         add(L.w, { t = now(), kind = "probe", data = FR.probe(dc), epoch = epoch() })
     end
     local name, coll = FR.entries(dc)
-    if not coll then return end
+    if not coll then L.dc = nil return end
     local n = count(coll)
     -- The log can drop old entries or be rebuilt (a load): if the last known entry moved, find it again.
     local from = L.count + 1
@@ -473,7 +557,10 @@ if not FR.registered then
         FR.log.next = t + FR.LOG_POLL_MS
         local function poll()
             local ok, err = pcall(FR.pollLog)
-            if not ok then Ext.Utils.PrintWarning("[FightRec] combat log: " .. tostring(err)) end
+            if not ok then
+                FR.log.dc = nil   -- the panel may have been rebuilt (a load): find it again
+                Ext.Utils.PrintWarning("[FightRec] combat log: " .. tostring(err))
+            end
         end
         -- Noesis is safe to read only in a deferred UI callback (the extender warns from Tick); older
         -- extenders have no Defer.

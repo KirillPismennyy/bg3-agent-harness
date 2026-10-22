@@ -62,7 +62,7 @@ Osi = {
     GetPosition = function() return 1, 2, 3 end,
     IsEnemy = function(a) return a == ug and 1 or 0 end,
     GetStatusTurns = function() return 3 end,
-    GetEquippedItem = function(_, slot) return slot == "MeleeMainHand" and "Sword_00000000-0000-0000-0000-00000000000a" or nil end,
+    GetEquippedItem = function(_, slot) return slot == "Melee Main Weapon" and "Sword_00000000-0000-0000-0000-00000000000a" or nil end,
     GetRegion = function() return "WLD_Main_A" end,
 }
 FightRec = nil
@@ -72,9 +72,10 @@ local L = M.listeners
 
 -- preparation, outside combat
 L.CastedSpell(P1, "Shout_Bless", "Shout", "None", 1)
+L.StatusApplied(P1, "SURPRISED", "NULL_00000000-0000-0000-0000-000000000000", 1)
 L.StatusApplied(P1, "BLESS", P1, 1)
 L.CastedSpell(FAR, "Projectile_FireBolt", "Projectile", "Fire", 1)   -- not ours
-ok(#FR.prep == 2 and FR.fight == nil, "outside combat only party records are kept, as preparation")
+ok(#FR.prep == 3 and FR.fight == nil, "outside combat only party records are kept, as preparation")
 
 -- combat starts; the party joins on round 1
 L.CombatStarted("C1")
@@ -88,8 +89,20 @@ M.mono = M.mono + 300
 L.AttackedBy(GOB, P1, nil, "Slashing", 9, "Attack", 1)         -- nil attacker in the middle
 L.AttackedBy(FAR, "Other_00000000-0000-0000-0000-000000000004", nil, "Fire", 3, "Attack", 1)
 L.RollResult("x", GOB, P1, 1, 0, 0)
+-- a HitDesc Stringify only names: its members come from the extender's type info
+local hitDesc = setmetatable({}, {})
+local rawtype = type
+type = function(x) if x == hitDesc then return "userdata" end return rawtype(x) end   -- plain Lua has no userdata
+local HIT = { TotalDamageDone = 9, AttackRollAbility = "Strength", HitWith = "Weapon" }
+Ext.Types = { GetObjectType = function(x) return x == hitDesc and "HitDesc" or nil end,
+    GetTypeInfo = function(n) return n == "HitDesc" and { Members = { TotalDamageDone = "int32",
+        AttackRollAbility = "AbilityId", HitWith = "HitWith" } } or nil end,
+    Serialize = function() error("not serializable") end }
+local hm = getmetatable(hitDesc) or {}
+hm.__index = function(_, k) return HIT[k] end
+if not getmetatable(hitDesc) then setmetatable(hitDesc, hm) end
 M.events.DealtDamage({ Caster = { Uuid = { EntityUuid = u1 } }, Target = { Uuid = { EntityUuid = ug } },
-    Hit = { TotalDamageDone = 9 }, Attack = {} })
+    Hit = hitDesc, Attack = {} })
 -- a userdata-like event: reading a field it lacks is an error (BeforeDealDamage has no Caster, live 2026-10-22)
 local strict = function(t) return setmetatable({}, { __index = function(_, k)
     if t[k] == nil then error("Property does not exist: " .. k) end return t[k] end }) end
@@ -108,17 +121,19 @@ local f = lines(M.files[path])
 local kinds = {}
 for _, l in ipairs(f) do kinds[#kinds + 1] = l:match('"kind":"([^"]+)","t":') end   -- the record's own kind
 local seq = table.concat(kinds, ",")
-ok(seq == "meta,prep,prep,snapshot,CombatRoundStarted,AttackedBy,RollResult,DealtDamage,BeforeDealDamage,BeforeDealDamage,snapshot,end",
+ok(seq == "meta,prep,prep,prep,snapshot,CombatRoundStarted,AttackedBy,RollResult,DealtDamage,BeforeDealDamage,BeforeDealDamage,snapshot,end",
     "fight file: " .. seq)
 local _, shapes = M.files[path]:gsub('"shape":', "")
 ok(shapes == 2, "each damage event's shape is dumped once (DealtDamage, BeforeDealDamage)")
 ok(M.files[path]:find('"name":"Lae\'zel"', 1, true) ~= nil, "characters are named")
 ok(M.files[path]:find('"amount":9') and not M.files[path]:find('"amount":3'), "only the party's combat is recorded")
 ok(M.files[path]:find('"name":"BLESS (shown)"', 1, true) ~= nil, "statuses and spells carry their shown names")
-ok(M.files[path]:find('"slot":"MeleeMainHand"', 1, true) ~= nil, "the snapshot lists equipment")
+ok(M.files[path]:find('"slot":"Melee Main Weapon"', 1, true) ~= nil, "the snapshot lists equipment")
 ok(M.files[path]:find('"turns":3', 1, true) ~= nil, "statuses carry their turns")
+ok(M.files[path]:find('"AttackRollAbility":"Strength"', 1, true) ~= nil, "a HitDesc is read member by member")
+ok(not M.files[path]:find('00000000-0000-0000-0000-000000000000', 1, true), "the null GUID is no one")
 ok(M.files[path]:find('"hooks":', 1, true) ~= nil, "meta lists the hooks")
-local snap = f[4]
+local snap = f[5]
 ok(snap:find(ug, 1, true) ~= nil, "the combat's enemies are snapshotted")
 
 ------------------------------------------------------------------------
@@ -140,9 +155,15 @@ local function entry(t, rolls)
 end
 local items = { entry("Lae'zel hits Goblin", { "Attack 17 vs AC 15", "9 Slashing" }) }
 local dc = obj("gui::DCCombatLog", { p = { Entries = coll(items), CurrentPlayer = obj("ls::VMPlayer") } })
-local page = obj("ls::UIWidget", { Name = "CombatLog", DataContext = dc })
-local cr = obj("Grid", { children = coll({ page }) })
-local root = obj("Border")
+-- live 2026-10-22: the log is not a ContentRoot page; it sits deeper in the visual tree
+local logEl = obj("ls::LSUserControl", { Name = "CombatLogPanel", DataContext = dc, VisualChildrenCount = 0 })
+local hud = obj("Grid", { Name = "Hud", DataContext = obj("gui::DCHud"), VisualChildrenCount = 1, vkids = { logEl } })
+function hud:VisualChild(i) return self.vkids[i] end   -- 1-based here
+local page = obj("ls::UIWidget", { Name = "Hud", DataContext = obj("gui::DCHud") })
+local cr = obj("Grid", { children = coll({ page }), VisualChildrenCount = 1, vkids = { hud } })
+function cr:VisualChild(i) return self.vkids[i] end
+local root = obj("Border", { VisualChildrenCount = 1, vkids = { cr } })
+function root:VisualChild(i) return self.vkids[i] end
 function root:Find(n) return n == "ContentRoot" and cr or nil end
 local deferred = 0
 Ext.UI = { GetRoot = function() return root end, Defer = function(fn) deferred = deferred + 1 fn() end }
@@ -158,7 +179,7 @@ local cl = M.files[logPath] or C.files[logPath]
 local k = {}
 for _, l in ipairs(lines(cl)) do k[#k + 1] = l:match('"kind":"([^"]+)","t":') end
 ok(deferred == 2, "the combat log is read inside Ext.UI.Defer")
-ok(table.concat(k, ",") == "probe,entry,entry", "combat log: probe then each entry once: " .. table.concat(k, ","))
+ok(table.concat(k, ",") == "search,probe,entry,entry", "combat log: probe then each entry once: " .. table.concat(k, ","))
 ok(cl:find("WIS 14 vs DC 13", 1, true) and cl:find("Attack 17 vs AC 15", 1, true), "entries keep their roll lines")
 local bad = false for _, t in ipairs(propsOn) do if t == "Button" or t == "Grid" then bad = true end end
 ok(not bad, "GetAllProperties never runs on an element")
