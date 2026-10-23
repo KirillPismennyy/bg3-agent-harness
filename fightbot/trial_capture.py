@@ -59,6 +59,50 @@ local function exact(u,book)
   return {rows=rows,count=#rows,precision="unrounded",
    source="ActionResources.Resources Amount/MaxAmount/Level; no usable-movement projection"}
  end)
+ out.status_container_entries=read(function()
+  local begin_ms=Ext.Utils.MonotonicTime()
+  local function handle_id(h)
+   local n=Ext.Utils.HandleToInteger(h)
+   assert(math.type(n)=="integer" and n~=0,"status handle unavailable")
+   return tostring(n)
+  end
+  local owner=handle_id(e)
+  local container=assert(e.StatusContainer,"StatusContainer absent; status absence not established")
+  local rows,seen={},{}
+  for h,id in pairs(container.Statuses) do
+   local instance=handle_id(h)
+   assert(not seen[instance],"duplicate status instance")
+   seen[instance]=true
+   -- Keep the original handle: Entity.Get(number) interprets a NetId instead.
+   local status=assert(Ext.Entity.Get(h),"status entity unavailable")
+   assert(handle_id(status)==instance,"status entity handle mismatch")
+   local server=assert(status.ServerStatus,"ServerStatus component unavailable")
+   assert(id~=nil and server.StatusId~=nil,"status ID unavailable")
+   local sid=tostring(id)
+   assert(sid~="" and sid==tostring(server.StatusId),"status ID mismatch")
+   local ownership=assert(status.ServerStatusOwnership,"status ownership unavailable")
+   local bearer=handle_id(ownership.Owner)
+   assert(bearer==owner,"status owner mismatch")
+   assert(server.Type~=nil,"status type unavailable")
+   local active=status:HasRawComponent("esv::status::ActiveComponent")
+   assert(type(active)=="boolean","status active tag unavailable")
+   rows[#rows+1]={id=sid,instance=instance,owner_handle=bearer,
+    type=tostring(server.Type),active=active,
+    lifetime=read(function()
+     local c=status.StatusLifetime
+     if c==nil then return {component_present=false} end
+     local value=c.Lifetime
+     assert(type(value)=="number" and value==value and value~=math.huge and value~=-math.huge,
+      "status lifetime unavailable")
+     return {component_present=true,raw_value=value,units="unqualified"}
+    end)}
+  end
+  table.sort(rows,function(a,b)return a.instance<b.instance end)
+  return {rows=rows,count=#rows,owner_uuid=u,owner_handle=owner,begin_ms=begin_ms,
+   end_ms=Ext.Utils.MonotonicTime(),source="StatusContainer.Statuses + ServerStatus + ServerStatusOwnership.Owner",
+   coverage="present-container-entries-only",global_scan_performed=false,
+   absence_proven=false,lifecycle_semantics_qualified=false}
+ end)
  if book then
   out.actor_default_ability=tostring(e.Stats.SpellCastingAbility)
   out.raw_resource_amounts=read(function()return BG3AI.Guard.resources(u)end)

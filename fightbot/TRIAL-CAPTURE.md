@@ -42,3 +42,26 @@ reports five skips. They exercise the actual generated Lua, zero/unrounded pools
 missing/partial reads and nonfinite values. Independent two-round review also
 checked strict JSON serialization and late getter/iteration faults. Existing
 trial capture tests still run without Lupa.
+
+New captures also include native.actor.status_container_entries and the target
+counterpart. Each independently fallible facet reads a present StatusContainer
+and resolves its original handle keys directly, checking the status entity,
+StatusId and bearer ownership. Rows retain duplicate status IDs as distinct
+instances and preserve the actual Active tag, including false. Entity/owner
+handles use exact decimal strings rather than floating-point JSON numbers.
+
+A missing container or invalid row makes the facet unknown and preserves HP and
+resource observations. An empty present container means zero listed instances;
+it does not establish global status absence. This path performs no global status
+scan. Its per-actor begin_ms/end_ms interval is inside the sequential callback;
+it does not make actor and target reads atomic. Raw optional Lifetime readings
+carry units=unqualified and must not be interpreted as remaining turns or seconds.
+Source attribution, lifecycle semantics and complete owned-status coverage remain
+unproven. This facet is evidence only: it does not change action permission or
+silently replace the replay tool's existing qualified status supplements.
+
+Generated-Lua tests in tests/test_snapshot_statuses.py use optional lupa.lua54.
+They cover exact large handles, original-handle lookup, duplicate IDs, inactive
+instances, unknown/empty distinction, identity/owner/read failures, partial-row
+refusal, optional lifetime errors and strict JSON serialization. Native runtime
+validation is still required when live interaction resumes.
