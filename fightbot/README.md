@@ -127,3 +127,14 @@ lua fightbot/tests/test_source_cast.lua mod/Mods/BG3AI/ScriptExtender/Lua/Server
 lua fightbot/tests/test_actions_source_gate.lua .
 lua fightbot/tests/test_miss_roll_probe.lua fightbot/probes/miss_roll_probe.lua
 ```
+
+The installer also copies the lifecycle probe to `cast_probe.lua` and the numerical event probe to
+`FightBotProbe/miss_roll_probe.lua` in Script Extender. Existing copies are backed up and installed
+hashes recorded in the receipt. It preserves FightRec.lua and existing probe captures. Verify the
+installer in temporary fixtures with `powershell -File fightbot/tests/test_install.ps1`.
+
+Use [`trial_cast`](TRIAL-CAPTURE.md) for a single guarded action with immutable before/after
+observations and a [bound evidence freeze](TRIAL-EVIDENCE.md). Failed and uncertain attempts remain
+recorded; a completed job is not replay acceptance. [Movement observations](RESOURCE-OBSERVATIONS.md)
+preserve exact raw pools separately from status-masked usable amounts. Optional stat attributes are
+checked against their native schema before lookup, avoiding warnings for unsupported fields.

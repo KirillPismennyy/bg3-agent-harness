@@ -29,6 +29,19 @@ Assert-PlainPath $loader
 foreach ($item in (Get-ChildItem -LiteralPath $src -Recurse -Force)) { Assert-PlainPath $item.FullName }
 Assert-SeChild $dst
 Assert-SeChild $loaderDst
+$probeDir = Join-Path $se 'FightBotProbe'
+Assert-SeChild $probeDir
+if ((Test-Path -LiteralPath $probeDir) -and -not (Test-Path -LiteralPath $probeDir -PathType Container)) { throw 'FightBotProbe target is not a directory' }
+$probes = @(
+    @{ Source = (Join-Path $PSScriptRoot 'probes\cast_probe.lua'); Destination = (Join-Path $se 'cast_probe.lua'); BackupName = 'cast_probe.lua' },
+    @{ Source = (Join-Path $PSScriptRoot 'probes\miss_roll_probe.lua'); Destination = (Join-Path $probeDir 'miss_roll_probe.lua'); BackupName = 'miss_roll_probe.lua' }
+)
+foreach ($probe in $probes) {
+    Assert-PlainPath $probe.Source
+    Assert-SeChild $probe.Destination
+    if (-not (Test-Path -LiteralPath $probe.Source -PathType Leaf)) { throw "Missing probe source: $($probe.Source)" }
+    if ((Test-Path -LiteralPath $probe.Destination) -and -not (Test-Path -LiteralPath $probe.Destination -PathType Leaf)) { throw "Probe target is not a file: $($probe.Destination)" }
+}
 if (Test-Path -LiteralPath $dst) {
     if (-not (Test-Path -LiteralPath $dst -PathType Container)) { throw 'BG3AI target is not a directory' }
     foreach ($item in (Get-ChildItem -LiteralPath $dst -Recurse -Force)) { Assert-PlainPath $item.FullName }
@@ -57,7 +70,13 @@ $backup = Join-Path $backupParent $tag
 Assert-SeChild $backup
 New-Item -ItemType Directory -Path $backup | Out-Null
 $receipt = [ordered]@{ prepared_utc = [DateTime]::UtcNow.ToString('o'); status = 'prepared'; script_extender = $se;
-    backup_directory = $backup; previous_bg3ai = $false; previous_loader = $false; previous_settings = $false; settings_path = $cfg }
+    backup_directory = $backup; previous_bg3ai = $false; previous_loader = $false; previous_settings = $false; settings_path = $cfg;
+    probes = @() }
+foreach ($probe in $probes) {
+    $previous = Test-Path -LiteralPath $probe.Destination
+    if ($previous) { Copy-Item -LiteralPath $probe.Destination -Destination (Join-Path $backup $probe.BackupName) }
+    $receipt.probes += @{ path = $probe.Destination; previous = $previous; sha256 = (File-Hash $probe.Source) }
+}
 if (Test-Path -LiteralPath $dst) {
     $backupDst = Join-Path $backup 'BG3AI'
     Assert-SeChild $backupDst
@@ -73,6 +92,11 @@ $receiptPath = Join-Path $backup 'install-receipt.json'
 try {
     Copy-Item -LiteralPath $src -Destination $dst -Recurse
     Copy-Item -LiteralPath $loader -Destination $loaderDst -Force
+    if (-not (Test-Path -LiteralPath $probeDir)) { New-Item -ItemType Directory -Path $probeDir | Out-Null }
+    foreach ($probe in $probes) {
+        Copy-Item -LiteralPath $probe.Source -Destination $probe.Destination -Force
+        if ((File-Hash $probe.Source) -ne (File-Hash $probe.Destination)) { throw "Probe hash mismatch: $($probe.BackupName)" }
+    }
     foreach ($item in (Get-ChildItem -LiteralPath $src -File -Recurse)) {
         $relative = $item.FullName.Substring($src.Length).TrimStart('\')
         if ((File-Hash $item.FullName) -ne (File-Hash (Join-Path $dst $relative))) { throw "Lua hash mismatch: $relative" }
@@ -81,7 +105,7 @@ try {
     if ($cfg) { [IO.File]::WriteAllText($cfg, $settingsJson, $utf8) }
     $receipt.status = 'installed'
     $receipt.installed_utc = [DateTime]::UtcNow.ToString('o')
-    Write-Host "Installed BG3AI and loader. Backup and receipt: $backup"
+    Write-Host "Installed BG3AI, loader and read-only probes. Backup and receipt: $backup"
     if ($cfg) { Write-Host 'Lua debugger enabled. Restart the game. FightRec.lua and captures were preserved.' }
 } catch { $receipt.status = 'failed'; $receipt.error = $_.Exception.Message; throw
 } finally { [IO.File]::WriteAllText($receiptPath, ($receipt | ConvertTo-Json -Depth 100), $utf8) }

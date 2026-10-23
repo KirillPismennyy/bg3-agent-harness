@@ -12,7 +12,10 @@ parser.add_argument("--repo", type=Path, default=Path(__file__).resolve().parent
 parser.add_argument("--probe", action="store_true")
 parser.add_argument("--log", type=Path, required=True)
 parser.add_argument("--expected-recorder-hash")
+parser.add_argument("--trial-root", type=Path)
+parser.add_argument("--script-extender-dir", type=Path)
 args = parser.parse_args()
+args.trial_root = (args.trial_root or (args.log.parent / "trials")).resolve()
 args.repo = args.repo.resolve()
 if not (args.repo / "fightbot" / "fightbot_mcp.py").is_file() or not (args.repo / "bridge" / "src" / "bg3ai").is_dir():
     parser.error("--repo must contain fightbot/fightbot_mcp.py and bridge/src/bg3ai (defaults to this script's repository)")
@@ -69,6 +72,29 @@ try:
                 result = owner.poll()
             elif kind == "acknowledge_resolution":
                 result = owner.acknowledge_resolution(request.get("note"))
+            elif kind == "trial_cast":
+                if not state.get("ready") or bot is None:
+                    raise ValueError("recorders and combat are not READY")
+                from trial_capture import capture_trial, summarize_trial
+                params = dict(request.get("args", {}))
+                if set(params) - {"char", "spell", "target", "source"}:
+                    raise ValueError("trial_cast accepts char, spell, target and optional source")
+                trial_destination = args.trial_root
+                name = request.get("directory")
+                if name is not None:
+                    import re
+                    if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", name):
+                        raise ValueError("trial directory must be a simple local basename")
+                    trial_destination = args.trial_root / name
+                if not isinstance(request.get("numerical_probe", False), bool):
+                    raise ValueError("numerical_probe must be a boolean")
+                result = capture_trial(owner, bot, actor=params["char"], target=params["target"],
+                    spell=params["spell"], source=params.get("source"), ready_token=request.get("ready_token"),
+                    destination=trial_destination, recorder_dir=bot.reader.folder,
+                    script_extender_dir=args.script_extender_dir,
+                    numerical_probe=request.get("numerical_probe", False),
+                    flush_timeout_s=request.get("flush_timeout_s", 2.0))
+                result = summarize_trial(result)
             elif kind == "eval":
                 # Explicit root-controlled Lua; mutations need the current readiness token.
                 fn = lambda: owner.evaluate(request["code"], context=request.get("context", "client"),
