@@ -507,6 +507,31 @@ def named_pools(rows,names):
     core={"actions":int(ordinary("ActionPoint")["amount"]),"bonusActions":int(ordinary("BonusActionPoint")["amount"]),"reactionPoints":int(ordinary("ReactionActionPoint")["amount"]),"rawMovement":ordinary("Movement")["amount"],"maximumMovement":ordinary("Movement")["max"],"spellSlots":{str(level):int(r["amount"]) for level,r in mapped.get("SpellSlot",{}).items()},"resources":{name:int(one(list(items.values()),"non-tiered resource")["amount"]) for name,items in mapped.items() if name not in {"ActionPoint","BonusActionPoint","ReactionActionPoint","Movement","SpellSlot"}}}
     return core
 
+def checkpoint_inputs(intake,snapshot,role,phase,profile):
+    """Resolve historical state only for fields this role/phase consumes.
+    Validate present native alternatives first: malformed data cannot select fallback.
+    """
+    native=snapshot["native"][role]
+    resource_native="raw_resource_entries" in native
+    if resource_native:resource_rows(native,None)
+    complete=ownership_inventory(snapshot,role)
+    if complete is None:fresh_status_entries(snapshot,role)
+    consumed=[]
+    if not resource_native:consumed.append("resources")
+    if role=="actor" and complete is None:consumed.append("statuses")
+    evidence={"path":str(intake.trial/(phase+".json")),"sha256":intake.report["files"][phase]["sha256"],"started_ms":snapshot["started_ms"],"finished_ms":snapshot["finished_ms"]}
+    if not consumed:return {},{"noCheckpointConsumed":True,"consumedFields":[],"snapshotEvidence":evidence}
+    boundary=snapshot["started_ms"] if phase=="before" else snapshot["finished_ms"]
+    checkpoint,receipt=intake.resolve_checkpoint(native["uuid"],boundary)
+    receipt=dict(receipt,noCheckpointConsumed=False,consumedFields=consumed,snapshotEvidence=evidence)
+    if profile is not None:
+        require(profile["controlled"]["acceptDeferredCheckpoint"] is True,"Stale checkpoint evidence cannot become an exact boundary")
+        limit=profile["timingLimits"]["maxPreCheckpointAgeMs" if phase=="before" else "maxPostCheckpointAgeMs"]
+        require(0<=receipt["ageMs"]<=limit,("Pre-checkpoint outside explicitly accepted staleness bound" if phase=="before" else "Post checkpoint outside explicitly accepted staleness bound"))
+        if phase=="after":require(receipt["t"]>=intake.before["finished_ms"],"No post-action raw checkpoint")
+    return checkpoint,receipt
+
+
 def request(intake,before,profile):
     native=before["native"];caster=native["actor"]["uuid"];target=native["target"]["uuid"]
     party=one([x for x in before["party"] if x["uuid"]==caster and x["name"]==intake.intent["actor"]],"BEFORE caster")
@@ -515,8 +540,8 @@ def request(intake,before,profile):
     source,random=intake.joined_random(caster,target)
     require(source in [{k:v for k,v in s.items() if k in source} for s in native["actor"]["sources"]],"Executed source not in BEFORE caster sourcebook")
     require(source["SpellCastingAbility"]=="Intelligence","Unsupported source ability")
-    cp,cp_receipt=intake.resolve_checkpoint(caster,before["started_ms"])
-    target_cp,target_cp_receipt=intake.resolve_checkpoint(target,before["started_ms"])
+    cp,cp_receipt=checkpoint_inputs(intake,before,"actor","before",profile)
+    target_cp,target_cp_receipt=checkpoint_inputs(intake,before,"target","before",profile)
     actor_rows,actor_precision=resource_rows(native["actor"],cp)
     target_rows,target_precision=resource_rows(native["target"],target_cp)
     movement=one([x for x in actor_rows if x["id"]==MOVEMENT_ID and x["level"]==0],"raw movement pool")
@@ -527,21 +552,19 @@ def request(intake,before,profile):
         if ownership_inventory(before,role) is None:
             if fresh_status_entries(before,role) is None:gaps.append(role+"-fresh-listed-status-inventory")
     if "validated_status_inventory" not in native:gaps.append("global-owned-status-completeness")
-    if cp_receipt["atomic"] is not True or cp_receipt["ageMs"]:gaps.append("atomic-current-raw-movement-and-status-boundary")
+    if cp_receipt["noCheckpointConsumed"] or cp_receipt["atomic"] is not True or cp_receipt["ageMs"]:gaps.append("atomic-current-raw-movement-and-status-boundary")
     if profile is None:return None,{"status":"refused","mode":"strict","missingInputs":gaps,"join":intake.join,"rawCheckpoint":cp_receipt,"wholeSceneParityAccepted":False,"nativeRngReproduced":False,"engineInvoked":False}
     c=profile["controlled"]
     owned,status_receipt=status_evidence(intake,before,"actor",cp,"before",profile)
     target_statuses,target_status_receipt=status_evidence(intake,before,"target",target_cp,"before",profile)
     intake.before_target_statuses=target_statuses
     require(c["geometry"]=="explicit-visibility-empty-contact" and c["buildProjection"]=="compiled-plain-spell-operands-only" and c["excludedTargetStatusMechanics"]==sorted(x["id"] for x in target_statuses),"Unsupported conditional projection or target-status identity conflict")
-    require(c["acceptDeferredCheckpoint"] is True,"Stale checkpoint evidence cannot become an exact boundary")
     if "validated_status_inventory" not in native and "status_container_entries" not in native["actor"]:require(c["acceptStaleStatusProbe"] is True,"Stale evidence cannot become an exact boundary")
-    require(max(cp_receipt["ageMs"],target_cp_receipt["ageMs"])<=profile["timingLimits"]["maxPreCheckpointAgeMs"],"Pre-checkpoint outside explicitly accepted staleness bound")
     actor_field_age=0 if actor_precision=="callback-exact-unrounded" else cp_receipt["fieldSources"]["resources"]["ageMs"]
     target_field_age=0 if target_precision=="callback-exact-unrounded" else target_cp_receipt["fieldSources"]["resources"]["ageMs"]
     resource_source_age(actor_field_age,profile["timingLimits"]["maxBeforeActorResourceFieldSourceAgeMs"],"Before actor")
     resource_source_age(target_field_age,profile["timingLimits"]["maxBeforeTargetResourceFieldSourceAgeMs"],"Before target")
-    observed_statuses=[{"instanceId":str(x["instance"]),"ownerId":caster,"statusId":x["id"],"evidenceReference":cp_receipt["evidence"]+"; status evidence "+json.dumps(status_receipt,sort_keys=True)} for x in owned]
+    observed_statuses=[{"instanceId":str(x["instance"]),"ownerId":caster,"statusId":x["id"],"evidenceReference":json.dumps(cp_receipt["snapshotEvidence"],sort_keys=True)+( ("; checkpoint "+cp_receipt["evidence"]) if not cp_receipt["noCheckpointConsumed"] and "statuses" in cp_receipt["consumedFields"] else "")+"; status evidence "+json.dumps(status_receipt,sort_keys=True)} for x in owned]
     require(set(c["targetUnknownState"])=={"extraAttacks","pactSlots","abilityUses","usedThisTurn","awaitingRecharge"},"Unknown controlled target state field; native pool overrides prohibited")
     resource_def=profile["resourceDefinitions"]
     resource_xml=ET.fromstring(intake.read(Path(resource_def["path"]),resource_def["sha256"]))
@@ -554,7 +577,7 @@ def request(intake,before,profile):
     actor_resources=party["resources"];slots={k:int(v[0]) for k,v in actor_resources.get("SpellSlot",{}).items()}
     require(all(actor_resources[k][0]==int(actor_resources[k][0]) for k in ("ActionPoint","BonusActionPoint","ReactionActionPoint")) and all(v[0]==int(v[0]) for v in actor_resources.get("SpellSlot",{}).values()),"Fractional projected resource budget cannot be truncated")
     other={k:int(v[0]) for k,v in actor_resources.items() if k not in {"ActionPoint","BonusActionPoint","ReactionActionPoint","Movement"} and isinstance(v,list)}
-    state={"actorId":caster,"hp":native["actor"]["hp"],"actions":int(actor_resources["ActionPoint"][0]),"bonusActions":int(actor_resources["BonusActionPoint"][0]),"extraAttacks":c["actorExtraAttacks"],"reactionPoints":int(actor_resources["ReactionActionPoint"][0]),"rawMovement":movement["amount"],"maximumMovement":movement["max"],"temporaryHp":native["actor"]["temp_hp"],"spellSlots":slots,"pactSlots":{},"resources":other,"abilityUses":{},"usedThisTurn":c["actorUsedThisTurn"],"awaitingRecharge":c["actorAwaitingRecharge"],"statuses":observed_statuses,"evidenceReference":"observed BEFORE plus explicitly accepted deferred raw checkpoint; controlled fields segregated in profile"}
+    state={"actorId":caster,"hp":native["actor"]["hp"],"actions":int(actor_resources["ActionPoint"][0]),"bonusActions":int(actor_resources["BonusActionPoint"][0]),"extraAttacks":c["actorExtraAttacks"],"reactionPoints":int(actor_resources["ReactionActionPoint"][0]),"rawMovement":movement["amount"],"maximumMovement":movement["max"],"temporaryHp":native["actor"]["temp_hp"],"spellSlots":slots,"pactSlots":{},"resources":other,"abilityUses":{},"usedThisTurn":c["actorUsedThisTurn"],"awaitingRecharge":c["actorAwaitingRecharge"],"statuses":observed_statuses,"evidenceReference":"observed BEFORE native facets and only explicitly consumed checkpoint fields; controlled fields segregated in profile"}
     # Projected AP/bonus/reaction observations take precedence over older rows;
     # require agreement before importing rather than overriding either silently.
     require(all(state[k]==actor_pools[k] for k in ("actions","bonusActions","reactionPoints","rawMovement","maximumMovement","spellSlots")),"Native callback/projected/checkpoint current pool conflict")
@@ -565,7 +588,7 @@ def request(intake,before,profile):
         units.append({"id":unit["uuid"],"team":"Players" if role=="actor" else "Enemies","isPartyMember":role=="actor","level":projection["level"],"hp":unit["max_hp"],"initialHp":unit["hp"],"armorClass":projection["ac"],"strength":projection["abilities"]["str"],"dexterity":projection["abilities"]["dex"],"wisdom":projection["abilities"]["wis"],"charisma":projection["abilities"]["cha"],"movement":s["maximumMovement"],"position":role,"spellSlots":s["spellSlots"],"pactSpellSlots":s["pactSlots"],"resources":s["resources"]})
     rule=profile["rules"];intake.read(Path(rule["path"]),rule["sha256"],maximum=128<<20)
     payload={"schema":1,"scene":{"id":"conditional-saved-trial-"+intake.trial.name,"map":{"nodes":nodes,"visibility":[{"from":"actor","to":"target"}]},"units":units},"before":{"round":before["round"],"activeActorId":caster,"units":[state,target_state],"buildAndReactionEvidence":"controlled: "+c["buildProjection"],"geometryEvidence":"controlled: "+c["geometry"]},"intent":{"kind":"Ability","abilityId":source["Prototype"],"targetId":target},"source":source,"compilerContext":{"level":party["level"],"proficiencyBonus":native["actor"]["proficiency_bonus"],"spellcastingModifier":math.floor((party["abilities"]["int"]-10)/2)},"randomInputs":random,"rulesPath":rule["path"],"rulesSha256":rule["sha256"],"simulatorSha256":SIMULATOR_SHA}
-    qualifications={"rawCheckpoint":cp_receipt,"targetRawCheckpoint":target_cp_receipt,"actorResourceFieldSourceAgeMs":actor_field_age,"targetResourceFieldSourceAgeMs":target_field_age,"resourceAgeQualification":"Latest reconstructed checkpoint ages and consumed field-source ages are distinct; inherited values are not called freshly sampled pools.","actorPoolPrecision":actor_precision,"targetPoolPrecision":target_precision,"statusProbe":status_receipt,"targetStatusEvidence":target_status_receipt,"missingNativeInputs":gaps,"controlledFields":c,"profileQualifications":profile["qualifications"],"nativeTargetStatusesRetainedButUnmodeled":target_statuses,"nativeGeometryAdmission":False,"nativeRngReproduced":False,"wholeSceneParityAccepted":False,"experimentalSourceEquivalence":"unproven","afterClientGenerationIndependentlyQualified":False,"afterGenerationLimitation":"Historical AFTER owner binding is a copied poll before the callback; no independently validated post-readiness epoch proof is consumed by this adapter."}
+    qualifications={"rawCheckpoint":cp_receipt,"targetRawCheckpoint":target_cp_receipt,"actorResourceFieldSourceAgeMs":actor_field_age,"targetResourceFieldSourceAgeMs":target_field_age,"resourceAgeQualification":"Checkpoint ages and consumed field-source ages are distinct and reported only when historical fields are consumed; no-checkpoint receipts identify the actual native snapshot evidence.","actorPoolPrecision":actor_precision,"targetPoolPrecision":target_precision,"statusProbe":status_receipt,"targetStatusEvidence":target_status_receipt,"missingNativeInputs":gaps,"controlledFields":c,"profileQualifications":profile["qualifications"],"nativeTargetStatusesRetainedButUnmodeled":target_statuses,"nativeGeometryAdmission":False,"nativeRngReproduced":False,"wholeSceneParityAccepted":False,"experimentalSourceEquivalence":"unproven","afterClientGenerationIndependentlyQualified":False,"afterGenerationLimitation":"Historical AFTER owner binding is a copied poll before the callback; no independently validated post-readiness epoch proof is consumed by this adapter."}
     return payload,qualifications
 
 def usable_movement(resources):
@@ -613,13 +636,11 @@ def compare(intake,payload,actual,profile):
         check("actor."+native_key,actor_after["resources"][native_key][0],units[caster]["view"][model_key])
     usable,usable_qualification=usable_movement(actor_after["resources"])
     check("actor.usableMovement",usable,units[caster]["view"]["movement"],usable_qualification)
-    cp,receipt=intake.resolve_checkpoint(caster,after["finished_ms"])
+    cp,receipt=checkpoint_inputs(intake,after,"actor","after",profile)
     after_rows,after_precision=resource_rows(after["native"]["actor"],cp)
     actor_field_age=0 if after_precision=="callback-exact-unrounded" else receipt["fieldSources"]["resources"]["ageMs"]
     resource_source_age(actor_field_age,profile["timingLimits"]["maxAfterActorResourceFieldSourceAgeMs"],"After actor")
     movement=one([x for x in after_rows if x["id"]==MOVEMENT_ID and x["level"]==0],"AFTER raw movement")
-    require(receipt["t"]>=intake.before["finished_ms"],"No post-action raw checkpoint")
-    require(receipt["ageMs"]<=profile["timingLimits"]["maxPostCheckpointAgeMs"],"Post checkpoint outside explicitly accepted staleness bound")
     if "MovementObservation" in actor_after["resources"]:
         observed_raw=actor_after["resources"]["MovementObservation"]["raw"]
         require(observed_raw["current"]==movement["amount"] and observed_raw["max"]==movement["max"],"Guard movement raw observation conflicts with native pool")
@@ -628,8 +649,7 @@ def compare(intake,payload,actual,profile):
     check("actor.statusIdentities",sorted((x["id"],str(x["instance"])) for x in owned),sorted((x["statusId"],x["instanceId"]) for x in units[caster]["statusInstances"]),json.dumps(after_status_receipt,sort_keys=True))
     target_after_statuses,target_after_status_receipt=status_evidence(intake,after,"target",{},"after",profile)
     check("target.statusIds",sorted(x["id"] for x in target_after_statuses),sorted(x["statusId"] for x in units[target]["statusInstances"]),"known projection exclusion, not mechanical equivalence; "+json.dumps(target_after_status_receipt,sort_keys=True),kind="coverage-exclusion")
-    target_cp,target_receipt=intake.resolve_checkpoint(target,after["finished_ms"])
-    require(0<=target_receipt["ageMs"]<=profile["timingLimits"]["maxPostCheckpointAgeMs"] and target_receipt["t"]>=intake.before["finished_ms"],"Target post checkpoint outside qualified boundary")
+    target_cp,target_receipt=checkpoint_inputs(intake,after,"target","after",profile)
     target_rows,target_precision=resource_rows(after["native"]["target"],target_cp)
     target_field_age=0 if target_precision=="callback-exact-unrounded" else target_receipt["fieldSources"]["resources"]["ageMs"]
     resource_source_age(target_field_age,profile["timingLimits"]["maxAfterTargetResourceFieldSourceAgeMs"],"After target")

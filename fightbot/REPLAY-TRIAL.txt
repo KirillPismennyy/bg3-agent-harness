@@ -142,3 +142,46 @@ floor(x*10+0.5)/10 operation; the comparison operand stays unrounded.
 Failed/malformed present observations refuse;
 only absent observations retain the historical rounded comparison. This is a
 Guard projection, not proof of movement legality or collision equivalence.
+
+
+Field-driven checkpoint dependencies
+-----------------------------------
+Historical checkpoints are resolved separately for each role and observation
+phase, only when a consumed field needs them. Missing raw_resource_entries
+requires that role's checkpoint resource rows. Actor statuses require a
+checkpoint when a complete validated ownership inventory is absent: either the
+legacy probe identity crosscheck or the direct-container identity crosscheck
+continues to consume checkpoint statuses. Target status projections/direct
+facets alone do not require a checkpoint. Present malformed/failed resource or
+ownership facets refuse and never choose an older fallback.
+
+Complete native resource and ownership facets can qualify a calculation with
+acceptDeferredCheckpoint=false and all checkpoint/probe staleness limits0.
+Each unused receipt says noCheckpointConsumed=true, lists no consumed fields,
+and references the actual snapshot path/hash/callback interval. It contains no
+invented checkpoint age, sample, atomic flag, or status evidence reference.
+When any checkpoint field is consumed, its existing chain/interval/metadata
+validation, explicit deferred opt-in, phase-specific latest/post bounds, and
+consumed resource field-source age limits remain required. AFTER dependencies
+are independently selected after actual API execution.
+
+Raw recorder completeness, source/cast/actor-target joins and callback bounds
+remain mandatory. Native callbacks and ownership scans are not whole-world
+atomic sampling, and strict replay still refuses build/geometry/RNG/other gaps.
+
+
+Checkpoint dependency test fixtures
+----------------------------------
+The private native dependency tests use only explicit fixture locations, never
+paths inferred from the repository or this document's layout. Configure all4:
+ BG3_CHECKPOINT_TEST_HIT_TRIAL
+ BG3_CHECKPOINT_TEST_HIT_PROFILE
+ BG3_CHECKPOINT_TEST_MISS_TRIAL
+ BG3_CHECKPOINT_TEST_MISS_PROFILE
+The native profiles may remain outside the repository. With all4 variables
+absent, the12private dependency controls visibly skip. Any partial/empty
+configuration or configured nonexistent/wrong-kind trial/profile fails setup
+instead of skipping. The actual API control additionally needs the explicit
+BG3_REPLAY_TEST_V206_ADAPTER; existing historical controls retain their documented
+BG3_REPLAY_TEST_TRIAL and BG3_REPLAY_TEST_PROFILE settings. These paths remain
+valid when the committed tests and replay module are relocated.
