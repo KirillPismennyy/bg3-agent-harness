@@ -36,7 +36,8 @@ FightRecV2={source_content_sha256="test-recorder"}
 ''')
         lua.execute(mutation)
         result = lua.execute(snapshot_code("actor", "target", "Projectile_FireBolt"))
-        self.assertEqual(list(lua.globals().calls.values()), ["fightbot.identity", "state.combat", "state.character", "state.entity", "state.actions"])
+        self.assertEqual(list(lua.globals().calls.values()), ["fightbot.identity", "state.combat", "state.character", "state.entity", "state.actions", "fightbot.identity"])
+        self.assertFalse(result["validated_status_inventory"]["ok"], "Incomplete mock identity must fail the independent inventory facet")
         return result, lua
 
     def rows(self, result, who):

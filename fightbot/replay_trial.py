@@ -3,6 +3,7 @@ No game/UI/network/provider access. BEFORE/raw operands and AFTER oracles are
 separate phases. Selected results are never re-labelled individual d20 faces.
 """
 from __future__ import annotations
+import re
 import argparse
 import hashlib
 import json
@@ -250,7 +251,8 @@ def load_profile(path):
     require(set(value)==allowed and value["schema"]==1 and value["mode"]=="conditional","Unsupported profile schema or unexpected/oracle field")
     require(value["randomInputMode"]=="selected-d20-result-seam","Explicit post-selection d20 seam qualification required; no ordered face pair is inferred")
     allowed_control={"geometry","buildProjection","excludedTargetStatusMechanics","acceptDeferredCheckpoint","acceptStaleStatusProbe","actorExtraAttacks","actorUsedThisTurn","actorAwaitingRecharge","targetUnknownState"}
-    require(allowed_control<=set(value["controlled"])<=allowed_control|{"acceptContainerListedStatusProjection"},"Unexpected controlled field, including observed/oracle overrides")
+    require(allowed_control<=set(value["controlled"])<=allowed_control|{"acceptContainerListedStatusProjection","acceptValidatedOwnershipInventory"},"Unexpected controlled field, including observed/oracle overrides")
+    if "acceptValidatedOwnershipInventory" in value["controlled"]:require(value["controlled"]["acceptValidatedOwnershipInventory"] is True,"Ownership inventory opt-in must be exactly true")
     if "acceptContainerListedStatusProjection" in value["controlled"]:require(value["controlled"]["acceptContainerListedStatusProjection"] is True,"Container-listed status projection opt-in must be exactly true")
     require(set(value["timingLimits"])=={"maxPreCheckpointAgeMs","maxBeforeStatusProbeAgeMs","maxAfterStatusProbeAgeMs","maxPostCheckpointAgeMs","maxBeforeActorResourceFieldSourceAgeMs","maxBeforeTargetResourceFieldSourceAgeMs","maxAfterActorResourceFieldSourceAgeMs","maxAfterTargetResourceFieldSourceAgeMs"} and all(type(v) is int and v>=0 for v in value["timingLimits"].values()),"Explicit finite checkpoint AND before/after consumed resource field-source staleness limits required")
     for record in (value["rules"],value["resourceDefinitions"],value["statusBefore"],value["statusAfter"]):
@@ -314,7 +316,67 @@ def fresh_status_entries(snapshot,role):
                     require(raw.get("units")=="unqualified" and type(raw.get("raw_value")) in (int,float) and math.isfinite(raw["raw_value"]),"Invalid unqualified raw status lifetime")
     return rows,{"source":"native."+role+".status_container_entries","beginMs":value["begin_ms"],"endMs":value["end_ms"],"ownerUuid":native["uuid"],"ownerHandle":owner,"coverage":value["coverage"],"globalOwnershipCompleteness":"unproven","absenceProven":False,"lifecycleSemanticsQualified":False,"qualification":"Fresh sequential callback listed-instance evidence only; no global ownership completeness, absence, source, remaining-turn or lifecycle semantics established."}
 
+INVENTORY_HELPER_SHA256="b48a147c03fc77ee058b0fad2428e9c2a40b300a22c90198a6b92e04d67be901"
+
+def ownership_inventory(snapshot,role):
+    """Recompute the bounded ownership proof; present failure never falls back."""
+    native=snapshot["native"]
+    if "validated_status_inventory" not in native:return None
+    facet=native["validated_status_inventory"]
+    require(isinstance(facet,dict) and facet.get("ok") is True and not facet.get("error"),"Present validated_status_inventory failed/malformed; no fallback")
+    v=facet.get("result")
+    require(isinstance(v,dict) and v.get("schema")==1 and v.get("source")=="ServerStatus + ServerStatusOwnership.Owner; container set positive controls" and v.get("coverage")=="complete-server-status-ownership-at-callback","Ownership inventory contract mismatch")
+    require(v.get("helper_sha256")==INVENTORY_HELPER_SHA256,"Ownership helper source pin mismatch")
+    require(v.get("complete") is True and v.get("route_validated") is True and v.get("errors")==[] and v.get("lifecycle_semantics_qualified") is False,"Ownership inventory incomplete/unqualified")
+    for k in ("started_ms","finished_ms"):require(type(snapshot.get(k)) is int,"Snapshot inventory interval unavailable")
+    for k in ("begin_ms","end_ms","max_duration_ms","max_entities","total","scanned","controls","positive_controls"):require(type(v.get(k)) is int,"Inventory integer proof field unavailable")
+    require(0<=snapshot["started_ms"]<=v["begin_ms"]<=v["end_ms"]<=snapshot["finished_ms"] and 0<v["max_duration_ms"]<=250 and v["end_ms"]-v["begin_ms"]<=v["max_duration_ms"],"Ownership inventory interval/budget invalid")
+    require(0<=v["total"]==v["scanned"]<=v["max_entities"]<=50000,"Ownership inventory scan incomplete")
+    identity=snapshot["recording"];binding=snapshot["owner_binding"]
+    expected={"server_session":identity["session_id"],"combat_id":identity["combat_id"],"recorder_hash":native["recorder_hash"],"file_prefix":identity["file_prefix"]}
+    require(v.get("binding_before")==expected==v.get("binding_after") and expected["server_session"]==binding["server_session"] and expected["combat_id"]==binding["combat_id"] and expected["recorder_hash"]==binding["server_recorder_hash"] and identity.get("recorder_active") is True and identity["combat_id"] in identity.get("party_combats",[]),"Ownership inventory recorder/combat binding mismatch")
+    require(v.get("selected")=={r:native[r]["uuid"] for r in ("actor","target")},"Ownership inventory selected UUID mismatch")
+    rows=v.get("global_rows");actors=v.get("actors")
+    require(isinstance(rows,list) and len(rows)==v["scanned"] and isinstance(actors,list) and 2<=len(actors)<=4096,"Ownership inventory rows/control roster malformed")
+    instances=set();owned={}
+    for row in rows:
+        require(isinstance(row,dict) and isinstance(row.get("id"),str) and bool(row["id"]) and isinstance(row.get("type"),str) and bool(row["type"]) and type(row.get("active")) is bool,"Malformed ownership status row")
+        h=decimal_handle(row.get("instance"));owner=decimal_handle(row.get("owner_handle"))
+        require(h not in instances,"Duplicate global status instance");instances.add(h)
+        owned.setdefault(owner,[]).append(row)
+    controls=positive=0;uuids=set();handles=set();selected=None
+    for actor in actors:
+        require(isinstance(actor,dict) and isinstance(actor.get("uuid"),str) and re.fullmatch(r"[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}",actor["uuid"]) and actor.get("role") in ("party","combat","selected") and type(actor.get("container_present")) is bool,"Inventory actor identity malformed")
+        u=actor["uuid"];h=decimal_handle(actor.get("owner_handle"))
+        require(u not in uuids and h not in handles,"Duplicate inventory actor identity");uuids.add(u);handles.add(h)
+        listed=actor.get("container_rows");actual=actor.get("owned_rows")
+        require(isinstance(listed,list) and isinstance(actual,list) and actual==sorted(owned.get(h,[]),key=lambda r:r["instance"]),"Inventory owned rows mismatch global scan")
+        keys=[]
+        for r in listed:
+            require(isinstance(r,dict) and isinstance(r.get("id"),str) and bool(r["id"]),"Malformed inventory container row")
+            keys.append((decimal_handle(r.get("instance")),r["id"]))
+        require(len({r[0] for r in keys})==len(keys),"Duplicate inventory container instance")
+        if actor["container_present"]:
+            controls+=1;positive+=bool(keys)
+            require(sorted(keys)==sorted((r["instance"],r["id"]) for r in actual),"Inventory positive control status set mismatch")
+        else:require(not listed,"Absent inventory container has listed entries")
+        if u==native[role]["uuid"]:selected=actor
+    require(controls==v["controls"] and positive==v["positive_controls"] and positive>0,"Inventory positive control required/count mismatch")
+    roster=v.get("roster")
+    require(isinstance(roster,dict) and set(roster)=={"party","combat"} and all(isinstance(roster[k],dict) and roster[k] and all(u in uuids and flag is True for u,flag in roster[k].items()) for k in roster),"Inventory party/combat roster proof invalid")
+    require(uuids==set(roster["party"])|set(roster["combat"])|set(v["selected"].values()),"Inventory controls differ from declared full roster")
+    require(all(native[r]["uuid"] in uuids for r in ("actor","target")) and selected is not None,"Inventory selected actor omitted")
+    direct=native[role].get("status_container_entries",{"absent":True})
+    return selected["owned_rows"],{"source":"native.validated_status_inventory","coverage":v["coverage"],"globalOwnershipCompleteness":"validated-at-callback","absenceProven":not selected["owned_rows"],"lifecycleSemanticsQualified":False,"rows":selected["owned_rows"],"proof":v,"directContainerDiagnostic":direct,"qualification":"Complete bounded server-status ownership scan validated against all present roster containers and nonempty positive controls; absence applies only at this callback, not lifecycle/source semantics or whole scene parity."}
+
+
 def status_evidence(intake,snapshot,role,checkpoint,phase,profile):
+    complete=ownership_inventory(snapshot,role)
+    if complete is not None:
+        require(profile["controlled"].get("acceptValidatedOwnershipInventory") is True,"Validated ownership inventory requires explicit conditional opt-in")
+        rows,receipt=complete
+        if role=="actor":require(all(r["active"] is True for r in rows),"Inactive owned actor status cannot be silently dropped/imported active")
+        return rows,receipt
     fresh=fresh_status_entries(snapshot,role)
     if fresh is None:
         if role=="target":
@@ -378,8 +440,9 @@ def request(intake,before,profile):
     if target_precision!="callback-exact-unrounded":gaps.append("target-current-resource-pools")
     if actor_precision!="callback-exact-unrounded":gaps.append("actor-current-resource-pools")
     for role in ("actor","target"):
-        if fresh_status_entries(before,role) is None:gaps.append(role+"-fresh-listed-status-inventory")
-    gaps.append("global-owned-status-completeness")
+        if ownership_inventory(before,role) is None:
+            if fresh_status_entries(before,role) is None:gaps.append(role+"-fresh-listed-status-inventory")
+    if "validated_status_inventory" not in native:gaps.append("global-owned-status-completeness")
     if cp_receipt["atomic"] is not True or cp_receipt["ageMs"]:gaps.append("atomic-current-raw-movement-and-status-boundary")
     if profile is None:return None,{"status":"refused","mode":"strict","missingInputs":gaps,"join":intake.join,"rawCheckpoint":cp_receipt,"wholeSceneParityAccepted":False,"nativeRngReproduced":False,"engineInvoked":False}
     c=profile["controlled"]
@@ -388,7 +451,7 @@ def request(intake,before,profile):
     intake.before_target_statuses=target_statuses
     require(c["geometry"]=="explicit-visibility-empty-contact" and c["buildProjection"]=="compiled-plain-spell-operands-only" and c["excludedTargetStatusMechanics"]==sorted(x["id"] for x in target_statuses),"Unsupported conditional projection or target-status identity conflict")
     require(c["acceptDeferredCheckpoint"] is True,"Stale checkpoint evidence cannot become an exact boundary")
-    if "status_container_entries" not in native["actor"]:require(c["acceptStaleStatusProbe"] is True,"Stale evidence cannot become an exact boundary")
+    if "validated_status_inventory" not in native and "status_container_entries" not in native["actor"]:require(c["acceptStaleStatusProbe"] is True,"Stale evidence cannot become an exact boundary")
     require(max(cp_receipt["ageMs"],target_cp_receipt["ageMs"])<=profile["timingLimits"]["maxPreCheckpointAgeMs"],"Pre-checkpoint outside explicitly accepted staleness bound")
     actor_field_age=0 if actor_precision=="callback-exact-unrounded" else cp_receipt["fieldSources"]["resources"]["ageMs"]
     target_field_age=0 if target_precision=="callback-exact-unrounded" else target_cp_receipt["fieldSources"]["resources"]["ageMs"]

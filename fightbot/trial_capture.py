@@ -25,6 +25,7 @@ def _lua_string(value):
 
 def snapshot_code(actor, target, spell):
     params = _lua_string(json.dumps(dict(actor=actor, target=target, spell=spell)))
+    inventory = Path(__file__).with_name("status_inventory.lua").read_text(encoding="utf-8-sig")
     return '''-- trial-capture:snapshot
 local q=Ext.Json.Parse(PARAMS)
 local started_ms=Ext.Utils.MonotonicTime()
@@ -36,6 +37,8 @@ local function rpc(op,args) return read(function()
  local r=Ext.Json.Parse(BG3AI.rpc(Ext.Json.Stringify({op=op,args=args or {}})))
  assert(r.ok,r.error or "RPC failed");return r.result
 end) end
+local inventory_helper_sha256=INVENTORY_HELPER_SHA
+INVENTORY_HELPER
 local function exact(u,book)
  local e=assert(Ext.Entity.Get(u),"entity unavailable")
  local p=e.Transform.Transform.Translate
@@ -126,8 +129,9 @@ local out={identity=rpc("fightbot.identity"),combat=rpc("state.combat"),
  target=rpc("state.entity",{uuid=q.target}),actions=rpc("state.actions",{uuid=q.actor}),
  native_actor=read(function()return exact(q.actor,true)end),native_target=read(function()return exact(q.target,false)end),
  recorder_hash=FightRecV2 and FightRecV2.source_content_sha256 or nil}
+out.validated_status_inventory=read(validated_status_inventory)
 out.started_ms=started_ms;out.finished_ms=Ext.Utils.MonotonicTime()
-return Ext.Json.Stringify(out)'''.replace("PARAMS", params)
+return Ext.Json.Stringify(out)'''.replace("PARAMS", params).replace("INVENTORY_HELPER_SHA", _lua_string(hashlib.sha256(inventory.encode("utf-8")).hexdigest())).replace("INVENTORY_HELPER", inventory)
 
 
 def _binding(status):
@@ -156,7 +160,8 @@ def _snapshot(owner, actor, target, spell, status):
         "party": [{**actor_row, "uuid": actor}] if isinstance(actor_row, dict) else [],
         "turn_order": [{**target_row, "uuid": target}] if isinstance(target_row, dict) else [],
         "native": {"actor": result("native_actor"), "target": result("native_target"),
-                   "recorder_hash": raw.get("recorder_hash")},
+                   "recorder_hash": raw.get("recorder_hash"),
+                   "validated_status_inventory": raw.get("validated_status_inventory")},
         "snapshot_reads": raw, "required_reads_ok": all((raw.get(k) or {}).get("ok") is True for k in required),
         "started_ms": raw.get("started_ms"), "finished_ms": raw.get("finished_ms"),
         "scope": "one server callback; actor and target only; not a complete simulator scene"}

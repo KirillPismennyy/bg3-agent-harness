@@ -1,0 +1,51 @@
+Native validated ownership inventory (candidate, not deployed)
+
+trial_capture.snapshot_code embeds adjacent status_inventory.lua; no SE install,
+loader, globals, hooks, Osiris action calls or game-file writes. One synchronous
+ServerStatus enumeration per snapshot, at most 50,000 statuses and 250 ms; any
+enumeration/read/handle/owner/identity/control/timing failure fails the whole
+independently wrapped native.validated_status_inventory facet. Direct per-role
+status_container_entries remains unchanged diagnostic evidence, including errors.
+
+The proof retains complete compact global rows, canonical party/combat/selected
+roster and per-owner rows, exact decimal int64 instance/owner strings, active
+booleans, complete counts and before/after server-recorder/combat/hash identity.
+All present roster containers must match the complete owned instance+ID set;
+at least one nonempty positive control is required. A missing StatusContainer
+can imply zero currently owned statuses ONLY with this complete validated proof.
+This says nothing about status source, remaining turns or lifecycle semantics.
+No lifetime or source values are fabricated. Inactive rows are retained; the
+observed-action importer refuses inactive actor statuses it cannot model.
+
+replay_trial prefers a PRESENT complete ownership facet and requires exactly
+controlled.acceptValidatedOwnershipInventory=true. Failed/malformed PRESENT
+inventory NEVER falls back to direct container or old probe evidence. Complete
+proof may supersede failed direct container reads/unknown checkpoint statuses;
+both diagnostics and the full proof remain in the report. Absent new facet keeps
+the existing strict direct/legacy contracts unchanged. BEFORE proof is used
+before engine execution; AFTER proof remains post-API expected-side evidence.
+Target rows remain explicit unmodeled mechanic exclusions; full scene/build/
+reaction/geometry/RNG gaps still block native parity.
+
+Offline tests: 5 generated Lua/mock+consumer ownership checks pass, plus 3
+synthetic configured real API integration checks pass. Synthetic injection is
+explicitly in memory over immutable historical capture; not native validation.
+The two actual API executions each retain 27 compared-field matches, 2 known
+status exclusions, no unexplained scalar mismatch; altering AFTER target active
+state leaves BEFORE operands identical. 35 existing configured replay tests and
+15 existing direct-status intake tests also pass unchanged. Frozen reference
+bg3sim.dll SHA256 94f7ef46cd62dd698df08a986f5b99e6fbda804ad1b61a00ce6d7768e0de9bba.
+Native SE JSON serialization is not emulated by Lua mock; original read-only live
+probe separately demonstrated native [] empty arrays. Parent must test generated
+candidate natively and run independent review before integration.
+
+Proposed files ONLY:
+ fightbot/trial_capture.py
+ fightbot/status_inventory.lua
+ fightbot/replay_trial.py
+ fightbot/tests/test_owned_status_inventory.py
+ fightbot/tests/test_ownership_intake.py
+ fightbot/STATUS-INVENTORY.txt
+Existing test copies and adapter binary are local verification aids, not changes.
+Embedded Lua source pin is SHA256 of UTF-8 normalized LF source (BOM removed),
+so normal Windows/Git line-ending conversion preserves the embedded pin.
