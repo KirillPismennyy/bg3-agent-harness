@@ -14,8 +14,6 @@ for _, path in ipairs({
     "Server/Navigation.lua",
     "Server/Guard.lua",
     "Server/Actions.lua",
-    "Server/Recorder.lua", -- dev: tools/record_fight.py's raw fight log, off until rec.enable
-    "Server/Omni.lua",     -- dev: the fightbot's roll log, off until omni.rolls_enable
 }) do
     U.require(path)
 end

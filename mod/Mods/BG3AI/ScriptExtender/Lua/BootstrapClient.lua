@@ -18,7 +18,6 @@ for _, path in ipairs({
     "Client/Progression.lua", -- worker se: new game, character creation, level up
     "Client/Hotbar.lua",    -- worker se: hotbar cell + targeting reads for the N-target cast route (ACT-8)
     "Client/Spellbook.lua", -- worker act: prepare/unprepare spells through the spellbook page (A5)
-    "Client/CombatLog.lua", -- dev: the combat log's entries for tools/record_fight.py
 }) do
     U.require(path)
 end

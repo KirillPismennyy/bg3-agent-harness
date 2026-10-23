@@ -3,8 +3,9 @@
 
 It talks to the BG3AI mod's server half, loaded in the game by fightbot/FightBotLoad.lua (Windows, bg3se) or as the
 mod (Linux, bg3le), over the Script Extender's Lua debugger port. The mod's guarded actions do the work: casts pay
-what a UI cast pays, moves follow the engine's paths. Every tool call and its answer is appended to
-fightbot/logs/fightbot-<time>.jsonl. See fightbot/README.md.
+what a UI cast pays, moves follow the engine's paths. Rolls come from FightRec v2's files (fightrec_reader.py): one
+recorder in the game, not two. Every tool call and its answer is appended to fightbot/logs/fightbot-<time>.jsonl.
+See fightbot/README.md.
 
     uv run --project bridge python fightbot/fightbot_mcp.py        (Claude Code starts it from fightbot/.mcp.json)
 """
@@ -24,20 +25,31 @@ os.environ.setdefault("BG3AI_RPC_ROOT", "BG3AI")   # FightBotLoad.lua loads the 
 
 from bg3ai.game import Game, GameError, NotReady  # noqa: E402
 
+sys.path.insert(0, str(HERE))
+from fightrec_reader import FightRecReader  # noqa: E402
+
 LOG_DIR = Path(os.environ.get("FIGHTBOT_LOG_DIR", HERE / "logs"))
-TURN_POLL_S = 0.5
+# wait_for_turn reads the turn order when one of these events arrives (events.since is a cheap read), and at least
+# every FALLBACK_S: state.combat computes distances and line of sight per combatant, so it isn't polled.
+TURN_EVENTS = {"combat_started", "combat_ended", "round_started", "turn_started", "turn_ended", "died", "downed",
+               "revived"}
+EVENT_POLL_S = 0.3
+FALLBACK_S = 5.0
+PARTY_SECTIONS = ["abilities", "resources", "conditions"]
 
 
 class Bot:
-    """The tools' logic, without MCP (tests drive it with a fake game)."""
+    """The tools' logic, without MCP (tests drive it with a fake game and a reader of test files)."""
 
-    def __init__(self, game, log_path: Path | None = None):
+    def __init__(self, game, log_path: Path | None = None, reader: FightRecReader | None = None):
         self.g = game
         self.log_path = log_path
+        self.reader = reader or FightRecReader()
         self.ids: dict[str, str] = {}      # uuid -> c1, c2, ...
         self.uuids: dict[str, str] = {}    # c1 -> uuid
         self.names: dict[str, str] = {}    # uuid -> name
-        self.roll_seq = 0
+        self.roll_stream: str | None = None
+        self.roll_seq = 0                  # FightRec seq of the last roll row handed out
         self.ready = False
         self.seen_fight = False   # wait_for_turn reports fight_over only after a fight was seen
 
@@ -55,13 +67,10 @@ class Bot:
         return self.g.rpc(op, args or {}, "server")
 
     def ensure(self) -> None:
-        """Once per process: everything visible and the roll log on (FightBotLoad.lua does it too)."""
-        if self.ready:
-            return
-        self.rpc("dev.omniscient", {"on": True})
-        r = self.rpc("omni.rolls_enable", {"on": True})
-        self.roll_seq = int((r or {}).get("seq") or 0)
-        self.ready = True
+        """Once per process: everything visible (FightBotLoad.lua does it too)."""
+        if not self.ready:
+            self.rpc("dev.omniscient", {"on": True})
+            self.ready = True
 
     def short(self, uuid: str | None, name: str | None = None) -> str | None:
         if not uuid:
@@ -95,37 +104,50 @@ class Bot:
             return None
         return {"id": self.short(uuid), "name": self.names.get(uuid)}
 
-    def _rolls_since(self, since: int) -> list[dict]:
-        r = self.rpc("omni.rolls", {"since": since, "limit": 50}) or {}
-        rows = r.get("rows") or []
+    def rolls_since(self, since: int | None = None) -> list[dict]:
+        """Roll rows from FightRec's files with seq > since (default: those not handed out yet)."""
+        try:
+            r = self.reader.rows(0 if since is None else since)
+        except OSError:
+            return []
+        if r["stream"] != self.roll_stream:   # a new fight: its seqs start over
+            self.roll_stream, self.roll_seq = r["stream"], 0
+        rows = [x for x in r["rows"] if since is not None or x["seq"] > self.roll_seq]
         for row in rows:
             for k in ("attacker", "target", "roller", "against"):
                 w = row.get(k)
                 if isinstance(w, dict) and w.get("uuid"):
                     row[k] = {"id": self.short(w["uuid"], w.get("name")), "name": w.get("name")}
-            row.pop("t", None)
-        self.roll_seq = max(self.roll_seq, int(r.get("latest") or 0))
+        if rows:
+            self.roll_seq = max(self.roll_seq, max(x["seq"] for x in rows))
         return rows
 
     # ---- tools ----
 
     def fight_state(self) -> dict:
+        """Two game calls: status + turn order, then every party sheet and enemy examine in one batch."""
         self.ensure()
-        st = self.rpc("state.status") or {}
-        cb = self.rpc("state.combat") or {}
+        st, cb = self.g.multi([("state.status", {}), ("state.combat", {})])
+        if st is None or cb is None:
+            raise GameError("the game did not answer state.status / state.combat")
+        party_rows = st.get("party") or []
+        others = [o for o in cb.get("order") or [] if o.get("relation") != "party"]
+        calls = [("state.character", {"uuid": p.get("uuid"), "sections": PARTY_SECTIONS}) for p in party_rows]
+        calls += [("state.entity", {"uuid": o.get("uuid")}) for o in others]
+        details = self.g.multi(calls) if calls else []
+        sheets, exams = details[:len(party_rows)], dict(zip([o.get("uuid") for o in others], details[len(party_rows):]))
+
         out: dict[str, Any] = {"in_combat": bool(cb.get("active")), "round": cb.get("round")}
         party = []
-        for p in st.get("party") or []:
+        for p, ch in zip(party_rows, sheets):
             u = p.get("uuid")
             self.short(u, p.get("name"))
             row = {"id": self.ids.get(u), **{k: v for k, v in p.items() if k != "uuid"}}
-            try:
-                ch = self.rpc("state.character", {"uuid": u, "sections": ["abilities", "resources", "conditions"]})
-                for k in ("ac", "abilities", "saves", "resources", "statuses", "concentration"):
-                    if ch.get(k) is not None:
-                        row[k] = ch[k]
-            except GameError as e:
-                row["sheet_error"] = str(e)
+            if ch is None:
+                row["sheet_error"] = "no answer"
+            else:
+                row.update({k: ch[k] for k in ("ac", "abilities", "saves", "resources", "statuses", "concentration")
+                            if ch.get(k) is not None})
             party.append(row)
         out["party"] = party
         order = []
@@ -134,20 +156,18 @@ class Bot:
             self.short(u, o.get("name"))
             row = {"id": self.ids.get(u), **{k: v for k, v in o.items() if k != "uuid"}}
             if o.get("relation") != "party":
-                try:
-                    ex = self.rpc("state.entity", {"uuid": u}) or {}
-                    for k in ("hp", "max_hp", "temp_hp", "ac", "abilities", "saves", "resistances", "statuses",
-                              "level", "classes", "dead"):
-                        if ex.get(k) is not None:
-                            row[k] = ex[k]
-                except GameError as e:
-                    row["examine_error"] = str(e)
+                ex = exams.get(u)
+                if ex is None:
+                    row["examine_error"] = "no answer"
+                else:
+                    row.update({k: ex[k] for k in ("hp", "max_hp", "temp_hp", "ac", "abilities", "saves",
+                                                   "resistances", "statuses", "level", "classes", "dead")
+                                if ex.get(k) is not None})
             order.append(row)
         out["turn_order"] = order
-        cur = cb.get("current")
-        out["current"] = self.ref(cur)
+        out["current"] = self.ref(cb.get("current"))
         out["party_can_act"] = [self.ref(u) for u in cb.get("party_can_act") or []]
-        out["recent_rolls"] = self._rolls_since(max(0, self.roll_seq - 6))[-6:]
+        out["new_rolls"] = self.rolls_since()
         return out
 
     def actions(self, char: str) -> dict:
@@ -161,18 +181,15 @@ class Bot:
         return {"char": self.ref(u), "resources": r.get("resources"), "actions": acts}
 
     def _act(self, op: str, args: dict, wait_s: float = 40.0) -> dict:
+        """The job's own outcome (hits and damage as the game reported them). Its rolls reach FightRec's files
+        within FLUSH_MS and come with the next fight_state / wait_for_turn: no waiting here."""
         self.ensure()
-        before = self.roll_seq
         jr = self.g.run_job(op, args, "server", wait_s=wait_s)
         out = {"status": jr.status}
         if jr.result is not None:
             out["result"] = jr.result
         if jr.error:
             out["error"] = jr.error
-        time.sleep(0.3)   # the damage events of the last hit land just after the cast settles
-        rolls = self._rolls_since(before)
-        if rolls:
-            out["rolls"] = rolls
         return out
 
     def cast(self, char: str, spell: str, target: str | None = None, pos: list[float] | None = None) -> dict:
@@ -200,27 +217,36 @@ class Bot:
         """Until a party member can act, or the fight is over. Before any fight it waits for one to start."""
         self.ensure()
         t0 = time.time()
+        check, last_check = True, 0.0
         while time.time() - t0 < timeout_s:
+            if check or time.time() - last_check >= FALLBACK_S:
+                check, last_check = False, time.time()
+                try:
+                    cb = self.rpc("state.combat") or {}
+                except NotReady:
+                    time.sleep(1.0)
+                    continue
+                if not cb.get("active"):
+                    if self.seen_fight:
+                        self.seen_fight = False
+                        return {"fight_over": True, "new_rolls": self.rolls_since()}
+                else:
+                    self.seen_fight = True
+                    if cb.get("party_can_act"):
+                        return {"your_turn": True, "state": self.fight_state()}
             try:
-                cb = self.rpc("state.combat") or {}
+                evs = self.g.drain_events("server")
             except NotReady:
                 time.sleep(1.0)
                 continue
-            if not cb.get("active"):
-                if self.seen_fight:
-                    self.seen_fight = False
-                    return {"fight_over": True, "rolls": self._rolls_since(max(0, self.roll_seq - 6))}
-                time.sleep(TURN_POLL_S)
-                continue
-            self.seen_fight = True
-            if cb.get("party_can_act"):
-                return {"your_turn": True, "state": self.fight_state()}
-            time.sleep(TURN_POLL_S)
+            if any(e.get("kind") in TURN_EVENTS for e in evs):
+                check = True
+            else:
+                time.sleep(EVENT_POLL_S)
         return {"timeout": True, "waited_s": round(time.time() - t0)}
 
     def rolls(self, since: int = 0) -> dict:
-        self.ensure()
-        return {"rows": self._rolls_since(since), "latest": self.roll_seq}
+        return {"rows": self.rolls_since(since), "latest": self.roll_seq, "fight": self.roll_stream}
 
 
 def build_server(bot: Bot):
@@ -278,8 +304,9 @@ def build_server(bot: Bot):
 
     @tool
     def rolls(since: int = 0) -> dict:
-        """Every attack and damage roll since a sequence number: d20 natural and total vs AC, advantage, damage
-        dice. Misses and passed saves appear without numbers (the engine gives none)."""
+        """Every attack and damage roll of the current fight since a sequence number (FightRec's seq): d20 natural
+        and total vs AC, advantage, damage dealt and its dice. Misses and passed saves appear without numbers
+        (the engine gives none). fight_state and wait_for_turn already include the rolls you haven't seen."""
         return bot.rolls(since=since)
 
     return srv
