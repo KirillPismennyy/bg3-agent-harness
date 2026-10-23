@@ -1,5 +1,27 @@
 # Windows fightbot review — 2026-10-23
 
+## Confirmed follow-up: Osiris cast suppresses spell rolls
+
+The corrected live probe captured cust's Projectile_MainHandAttack at Taman with:
+`SpellCastOptions(IgnoreSpellRolls,AvoidDangerousAuras,IgnoreCastChecks,IgnoreTargetChecks,NoMovement,IgnoreHasSpell)`.
+These flags were present at the actor's IsCasting creation, direct deferred cast-state creation,
+ticks 2/10/30, and cast-state destruction. The cast dealt 5 piercing damage; the resource guard
+charged one action. **Charging resources does not restore normal attack-roll resolution.**
+The cast path remains unfixed and must not be treated as player-equivalent combat.
+
+Two probe defects were corrected locally: native bitfield serialization produced *RECURSION*,
+so CastOptions is now also captured directly with tostring; watching only the actor's IsCasting
+creation captured manual targeting previews, so direct cast-state lifecycle hooks were added.
+Regression tests cover both. The corrected probe uses four subscriptions, all retired after capture.
+No cast flags, engine queues or other engine fields were written during this investigation.
+
+The available manual files contain IsPreview/IsHoverPreview casts, not an executed manual baseline.
+They are not used as proof of executed-manual options. The decisive result is the bot's explicit
+IgnoreSpellRolls flag on an executed cast through destruction, corroborated by absent attack rolls.
+Raw bot-probe SHA256: 4ee7d2cdb7531557751da697e12b082dc94e09776269cc0053a3dd5aab22d9e7.
+Raw probes remain outside Git. The prior observations below are retained as investigation history;
+their uncertainty about the bot's actual flags is superseded by this capture.
+
 Verdict: installation and connection defects were corrected, and one supervised action ran.
 **Unattended/player-equivalent fighting is not validated.** The bot's ranged attack produced
 damage without a captured attack d20 or a visible attack-roll log entry. The Osiris cast path

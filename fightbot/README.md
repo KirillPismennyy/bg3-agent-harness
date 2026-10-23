@@ -10,6 +10,12 @@ records and visible log contained no attack-roll entry. Normal attack-roll behav
 do not treat this as validated player-equivalent combat or use unattended. Movement and full fights
 remain untested on Windows.
 
+**Follow-up confirmed:** the executed bot cast carries `IgnoreSpellRolls` (plus IgnoreCastChecks,
+IgnoreTargetChecks and IgnoreHasSpell). The resource guard charged its action but the cast route
+suppresses spell rolls. That route remains unfixed: do not use it for player-equivalent fighting.
+The corrected read-only probe captures direct bitfield labels and cast-state lifecycle events;
+see `SAFETY_REVIEW.md` for evidence and the earlier investigation history.
+
 A manual Gale Fire Bolt miss produced an Attack Roll tooltip (target AC 13), whereas the bot attack
 only produced a Damage Roll tooltip. Numeric d20 capture remains incomplete; the cast-route
 comparison and exact cause are still under investigation. See `SAFETY_REVIEW.md`.
