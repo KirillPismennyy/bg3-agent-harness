@@ -4,7 +4,7 @@ Both runtimes we target speak it:
 
 * bg3le (native Linux): src/debug_server.cpp. Listens on 127.0.0.1:9998 by default
   (BG3LE_DEBUG_PORT changes the port, BG3LE_DEBUG=0 turns it off) and reports protocol version 4.
-* bg3se (Windows build under Proton): BG3Extender/Lua/Debugger/LuaDebugMessages.cpp, enabled with
+* bg3se (native Windows or Windows build under Proton): BG3Extender/Lua/Debugger/LuaDebugMessages.cpp, enabled with
   "EnableLuaDebugger": true in ScriptExtenderSettings.json; port 9998 by default; protocol version 5
   (LuaDebugMessages.h: ProtocolVersion = 5).
 
@@ -56,7 +56,8 @@ Semantics worth knowing
 -----------------------
 * Version negotiation: bg3le answers any version with 4 and carries on. bg3se answers with 5 and then
   disconnects if the client asked for anything else, so on a mismatch we reconnect using the version the
-  server advertised.
+  server advertised. Default to 5 on Windows and 4 elsewhere; an explicit protocol_version overrides
+  this first attempt. Advertised-version reconnect still supports cross-runtime connections.
 * bg3le runs each evaluation on the story thread (server) or the client game thread and gives up after
   10 s ("timed out waiting for the story thread; is the game paused or still loading?"). The server
   context only exists once a save is loaded; at the main menu use the client context.
@@ -223,12 +224,14 @@ class LuaDebugClient:
     """
 
     def __init__(self, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT,
-                 protocol_version: int = BG3LE_PROTOCOL_VERSION, connect_timeout: float = 5.0,
+                 protocol_version: int | None = None, connect_timeout: float = 5.0,
                  output_maxsize: int = 10000):
         self.host = host
         self.port = port
         self.connect_timeout = connect_timeout
-        self.requested_version = protocol_version
+        self.requested_version = (
+            BG3SE_PROTOCOL_VERSION if sys.platform == "win32" else BG3LE_PROTOCOL_VERSION
+        ) if protocol_version is None else protocol_version
         self.server_version: int | None = None
         self.output: queue.Queue[DebugOutput] = queue.Queue(maxsize=output_maxsize)
 
