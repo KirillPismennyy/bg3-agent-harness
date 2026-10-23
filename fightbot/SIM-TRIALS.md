@@ -45,3 +45,21 @@ parity fixture. The simulator repository was inspected read-only and was not mod
 Validation for source observations: 225 Lua action tests, 26 fightbot Python tests, live MCP
 actions response retaining the racial Intelligence source. A controlled manual-versus-bot source
 selection acceptance test is still pending. No native RNG stream, AI or Act 1 parity is claimed.
+
+## Qualified follow-up experiments
+
+A native player-command Fire Bolt reached Finished with the racial progression source and
+Intelligence cache ability. Two targeting attempts instead submitted ground positions; neither
+establishes an attack against Taman or the expected +2 attack bonus. A command reporting success
+is not proof of target admission: require the executed target identity and resulting native events.
+
+An external bounded runner used the production simulator compiler and supplied-dice engine with
+the captured d20=11 and d10=4. It recomputed the malformed bot's +5 attack, hit against AC13,
+4 fire damage and one action charge. Source-correct +2 also hits AC13; a controlled AC14 case
+distinguishes the two. Geometry, statuses, HP and actor ordering remain controlled fixture inputs,
+so this is conditional calculation evidence, not an imported-state replay or gameplay parity.
+
+Status projections now retain availability metadata through fight_state, including raw enumeration
+versus metadata classification, actual visible/omniscient scope and hidden markers. Missing status
+components or failed lookups remain unknown. Live read-only MCP verification and 30 Python tests
+plus 15 Lua assertions cover this contract. Preserve this metadata in any simulator intake.

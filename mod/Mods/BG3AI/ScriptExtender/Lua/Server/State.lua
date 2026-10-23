@@ -119,6 +119,49 @@ local function relation(ctx, uuid)
     return "neutral"
 end
 
+-- Keep list consumers compatible while making unknown status state explicit.
+-- Scope follows the existing visibility mode, not a complete engine status inventory.
+function S.statusesView(e)
+    local observation = { available = false, raw_enumeration_available = false,
+        source = "StatusContainer.Statuses", scope = V.OMNISCIENT and "omniscient" or "visible" }
+    local sc = comp(e, "StatusContainer")
+    if not sc then
+        observation.reason = "component_absent_or_unavailable"
+        return {}, observation
+    end
+    local out, seen, projectionMissing = {}, {}, false
+    local ok = pcall(function()
+        -- A missing/unreadable collection must not become a known empty list.
+        for handle, id in pairs(sc.Statuses) do
+            local sid = tostring(id)
+            if not seen[sid] then
+                local info = V.statusInfo(sid)
+                if info then
+                    seen[sid] = true
+                    local row = { id = sid, name = info.name, hidden = info.hidden }
+                    local okl, lt = pcall(function() return handle.StatusLifetime and handle.StatusLifetime.Lifetime end)
+                    if okl and type(lt) == "number" and lt > 0 then row.turns = math.ceil(lt / 6) end
+                    out[#out + 1] = row
+                else
+                    -- statusInfo conflates filtering with failed/cached metadata reads.
+                    projectionMissing = true
+                end
+            end
+        end
+    end)
+    if not ok then
+        observation.reason = "enumeration_failed"
+        return out, observation
+    end
+    observation.raw_enumeration_available = true
+    if projectionMissing then
+        observation.reason = "status_projection_unavailable"
+        return out, observation
+    end
+    observation.available = true
+    return out, observation
+end
+
 local function concentration(e)
     local c = comp(e, "Concentration")
     if not c then return nil end
@@ -269,8 +312,8 @@ end
 function S.examine(ctx, uuid, e)
     local out = {
         uuid = uuid, name = V.name(uuid), relation = relation(ctx, uuid),
-        statuses = V.statuses(e),
     }
+    out.statuses, out.status_observation = S.statusesView(e)
     if truthy(osi(Osi.IsDead, uuid)) then out.dead = true end
     local h = health(e)
     if h and not ctx.rules.HIDE_NPC_HP and not ctx.is_party[uuid] then
@@ -303,8 +346,9 @@ local function partyBrief(ctx, uuid, active)
     local h = health(e) or {}
     local o = {
         uuid = uuid, name = V.name(uuid), hp = h.hp, max_hp = h.max_hp,
-        level = level(e), pos = pos1(V.pos(e)), statuses = V.statuses(e),
+        level = level(e), pos = pos1(V.pos(e)),
     }
+    o.statuses, o.status_observation = S.statusesView(e)
     if h.temp_hp and h.temp_hp > 0 then o.temp_hp = h.temp_hp end
     local cl = classes(e)
     if #cl > 0 then o.classes = cl end
@@ -1334,8 +1378,8 @@ function S.nearby(ctx, args)
                 local e, p, d = row[1], row[2], row[3]
                 local u = V.entityUuid(e)
                 if u and not ctx.is_party[u] and V.characterVisible(ctx, u, e, p) then
-                    local o = { uuid = u, name = V.name(u), relation = relation(ctx, u), pos = pos1(p), dist = round(d, 1),
-                        statuses = V.statuses(e) }
+                    local o = { uuid = u, name = V.name(u), relation = relation(ctx, u), pos = pos1(p), dist = round(d, 1) }
+                    o.statuses, o.status_observation = S.statusesView(e)
                     if #o.statuses == 0 then o.statuses = nil end
                     local dead = truthy(osi(Osi.IsDead, u))
                     if dead then o.dead = true end
@@ -1648,7 +1692,7 @@ timed("state.character", function(args)
         if #res > 0 then out.resistances = res end
     end
     if sec("resources") then out.resources = moveView(u, resources(e)) end
-    if sec("conditions") then out.statuses = V.statuses(e) end
+    if sec("conditions") then out.statuses, out.status_observation = S.statusesView(e) end
     if sec("passives") then out.features = passives(e) end
     if sec("equipment") then out.equipment = equipmentOf(e) end
     if sec("xp") then

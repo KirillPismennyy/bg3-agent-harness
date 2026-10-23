@@ -90,6 +90,11 @@ for cut, omitted, and sparse data. An empty issue list is not proof of full RNG 
 Damage association is conservative: ambiguous candidates are left unresolved. Per-target identity
 is not independently verified by the GUID/action join. Miss/save/zero-damage rows can lack numerical
 breakdowns. Actor sheets and statuses are limited by the harness's native component readers.
+Each status projection carries `status_observation`: `available`, `raw_enumeration_available`,
+`source`, `scope` (visible or omniscient), and a reason when unavailable. An empty `statuses` list
+with `available=false` means unknown. Successful raw enumeration does not guarantee successful
+metadata lookup; partial rows can remain alongside unavailable projection metadata. Hidden markers
+are retained in omniscient mode. This does not establish a complete engine status inventory.
 
 Tool calls/results are logged under ignored `fightbot/logs`. Runtime MCP configs are under ignored
 `fightbot/.runtime`. Keep save files, raw recorder captures, and user diagnostics out of Git.

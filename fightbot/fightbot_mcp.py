@@ -172,7 +172,7 @@ class Bot:
             if ch is None:
                 row["sheet_error"] = "no answer"
             else:
-                row.update({k: ch[k] for k in ("ac", "abilities", "saves", "resources", "statuses", "concentration")
+                row.update({k: ch[k] for k in ("ac", "abilities", "saves", "resources", "statuses", "status_observation", "concentration")
                             if ch.get(k) is not None})
             party.append(row)
         out["party"] = party
@@ -187,7 +187,7 @@ class Bot:
                     row["examine_error"] = "no answer"
                 else:
                     row.update({k: ex[k] for k in ("hp", "max_hp", "temp_hp", "ac", "abilities", "saves",
-                                                   "resistances", "statuses", "level", "classes", "dead")
+                                                   "resistances", "statuses", "status_observation", "level", "classes", "dead")
                                 if ex.get(k) is not None})
             order.append(row)
         out["turn_order"] = order
