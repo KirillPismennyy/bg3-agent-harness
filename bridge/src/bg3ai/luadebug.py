@@ -238,6 +238,7 @@ class LuaDebugClient:
         self._pending: dict[int, _Pending] = {}
         self._pending_lock = threading.Lock()
         self._seq = itertools.count(1)
+        self._connect_seq: int | None = None
         self._closed = threading.Event()
 
     # ---- connection ----
@@ -266,6 +267,8 @@ class LuaDebugClient:
         sock.settimeout(None)
         sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         self._sock = sock
+        self._seq = itertools.count(1)  # native bg3se restarts its expected inbound sequence on every connection
+        self._connect_seq = None
         self._closed.clear()
         self._reader = threading.Thread(target=self._read_loop, args=(sock,), name="luadebug-reader",
                                         daemon=True)
@@ -273,13 +276,16 @@ class LuaDebugClient:
 
     def _handshake(self, version: int) -> int:
         body = _uint_field(1, version)
-        pending = self._request(_bytes_field(_D_CONNECT, body))
-        if not pending.event.wait(self.connect_timeout):
-            self._forget(pending)
-            raise TimeoutError(f"no connect response from {self.host}:{self.port}")
-        if pending.error is not None:
-            raise pending.error
-        return int(pending.result or 0)
+        pending = self._request(_bytes_field(_D_CONNECT, body), handshake=True)
+        try:
+            if not pending.event.wait(self.connect_timeout):
+                self._forget(pending)
+                raise TimeoutError(f"no connect response from {self.host}:{self.port}")
+            if pending.error is not None:
+                raise pending.error
+            return int(pending.result or 0)
+        finally:
+            self._connect_seq = None
 
     def close(self) -> None:
         self._closed.set()
@@ -329,6 +335,8 @@ class LuaDebugClient:
         if CONTEXTS[context]:  # proto3: SERVER = 0 is the default and is left out
             body += _uint_field(1, CONTEXTS[context])
         body += _bytes_field(2, code.encode("utf-8"))
+        # Native BG3SE requires -1 for the global context; omitted int32 defaults to stack frame 0.
+        body += _uint_field(3, -1)
         body += _uint_field(4, flags)
 
         pending = self._request(_bytes_field(_D_EVALUATE, body))
@@ -350,29 +358,37 @@ class LuaDebugClient:
 
     # ---- plumbing ----
 
-    def _request(self, payload: bytes) -> _Pending:
-        seq = next(self._seq)
-        pending = _Pending(seq)
-        with self._pending_lock:
-            self._pending[seq] = pending
-        try:
-            self._send(_uint_field(_D_SEQ, seq) + payload)
-        except BaseException:
-            self._forget(pending)
-            raise
+    def _request(self, payload: bytes, *, handshake: bool = False) -> _Pending:
+        pending = self._send(payload, expect_reply=True, handshake=handshake)
+        assert pending is not None
         return pending
 
     def _forget(self, pending: _Pending) -> None:
         with self._pending_lock:
             self._pending.pop(pending.seq, None)
 
-    def _send(self, message: bytes) -> None:
-        sock = self._sock
-        if sock is None:
-            raise ConnectionError("not connected")
-        frame = struct.pack("<I", len(message) + 4) + message
+    def _send(self, payload: bytes, *, expect_reply: bool = False, handshake: bool = False) -> _Pending | None:
+        # Allocate AND send under one lock: a reader-thread auto-continue cannot overtake another request.
         with self._send_lock:
-            sock.sendall(frame)
+            sock = self._sock
+            if sock is None:
+                raise ConnectionError("not connected")
+            seq = next(self._seq)
+            pending = _Pending(seq) if expect_reply else None
+            if pending is not None:
+                with self._pending_lock:
+                    self._pending[seq] = pending
+                if handshake:
+                    self._connect_seq = seq
+            message = _uint_field(_D_SEQ, seq) + payload
+            frame = struct.pack("<I", len(message) + 4) + message
+            try:
+                sock.sendall(frame)
+            except BaseException:
+                if pending is not None:
+                    self._forget(pending)
+                raise
+            return pending
 
     def _resolve(self, seq: int, result: str | None = None, error: BaseException | None = None) -> None:
         with self._pending_lock:
@@ -431,6 +447,9 @@ class LuaDebugClient:
         reply = _first(msg, _B_REPLY_SEQ, 0)
         if _B_CONNECT in msg:
             version = _first(_fields(_first(msg, _B_CONNECT)), 1, 0)
+            # Native SendConnectResponse omits reply_seq_no; only the single handshake may claim it.
+            if not reply:
+                reply = self._connect_seq
             self._resolve(reply, result=str(version))
         elif _B_EVALUATE in msg:
             resp = _fields(_first(msg, _B_EVALUATE))
@@ -459,7 +478,7 @@ class LuaDebugClient:
             context = _first(_fields(_first(msg, _B_BREAKPOINT)), 3, 0)
             body = _uint_field(1, context) if context else b""
             try:
-                self._send(_uint_field(_D_SEQ, next(self._seq)) + _bytes_field(_D_CONTINUE, body))
+                self._send(_bytes_field(_D_CONTINUE, body))
             except OSError:
                 pass
         # Everything else (context updates, mod lists, debuggerReady) is not ours to act on.

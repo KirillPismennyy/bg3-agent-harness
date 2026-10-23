@@ -16,6 +16,8 @@ from bg3ai.game import GameError, JobResult  # noqa: E402
 from fightrec_reader import FightRecReader, unwrap  # noqa: E402
 
 FIXTURE = HERE / "fixtures" / "FightRec2"   # a slice of the 2026-10-23 chapel recapture (FightRec 2.0.0-dev.1)
+PREFIX = "1792757830-c28a02f575fb40e0ddbb900ea4c80981-server-fight01"
+COMBAT = json.loads(next(FIXTURE.glob(PREFIX + "-p*.jsonl")).read_text().splitlines()[0])["combat_id"]
 
 P1, P2, IMP1, IMP2 = "u-p1", "u-p2", "u-i1", "u-i2"
 
@@ -56,6 +58,9 @@ class FakeGame:
         self.calls.append((op, args))
         if op == "dev.omniscient":
             return {"on": True}
+        if op == "fightbot.identity":
+            return {"session_id": PREFIX.split("-server-")[0], "file_prefix": PREFIX,
+                    "combat_id": COMBAT, "party_combats": [COMBAT], "recorder_active": True}
         if op == "state.status":
             return {"party": [{"uuid": P1, "name": "Lae'zel", "hp": 12, "max_hp": 12, "pos": [1, 0, 2]},
                               {"uuid": P2, "name": "Gale", "hp": 8, "max_hp": 8}]}
@@ -113,12 +118,14 @@ class BotTest(unittest.TestCase):
 
     def test_cast_sends_uuids_and_returns_the_outcome_at_once(self):
         self.bot.fight_state()
+        self.g.combat = [{"active": True, "party_can_act": [P1]}]
         r = self.bot.cast("c1", "Target_MainHandAttack", target="c3")
         self.assertEqual(self.g.jobs[-1], ("act.cast", {"char": P1, "spell": "Target_MainHandAttack", "target": IMP1}))
         self.assertEqual(r, {"status": "done", "result": {"damage": [{"target": IMP1, "amount": 10}]}})
 
     def test_move_needs_a_target_or_pos(self):
         self.bot.fight_state()
+        self.g.combat = [{"active": True, "party_can_act": [P1]}]
         self.bot.move("c1", pos=[1, 0, 2])
         self.assertEqual(self.g.jobs[-1], ("act.move_to", {"char": P1, "pos": [1, 0, 2]}))
         with self.assertRaisesRegex(GameError, "needs a target"):

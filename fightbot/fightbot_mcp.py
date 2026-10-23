@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import functools
 import json
+import math
 import os
 import sys
 import time
@@ -22,6 +23,10 @@ from typing import Any
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "bridge" / "src"))
 os.environ.setdefault("BG3AI_RPC_ROOT", "BG3AI")   # FightBotLoad.lua loads the mod as console globals
+if sys.platform == "win32":
+    # Native bg3se services one debugger connection at a time; the Linux pool/push listener is unsuitable.
+    os.environ["BG3AI_RPC_CONNS"] = "1"
+    os.environ["BG3AI_JOB_PUSH"] = "0"
 
 from bg3ai.game import Game, GameError, NotReady  # noqa: E402
 
@@ -41,10 +46,14 @@ PARTY_SECTIONS = ["abilities", "resources", "conditions"]
 class Bot:
     """The tools' logic, without MCP (tests drive it with a fake game and a reader of test files)."""
 
-    def __init__(self, game, log_path: Path | None = None, reader: FightRecReader | None = None):
+    def __init__(self, game, log_path: Path | None = None, reader: FightRecReader | None = None,
+                 read_only: bool = False):
         self.g = game
         self.log_path = log_path
         self.reader = reader or FightRecReader()
+        self.reader.require_binding()
+        self.read_only = read_only
+        self.recording_identity: dict = {}
         self.ids: dict[str, str] = {}      # uuid -> c1, c2, ...
         self.uuids: dict[str, str] = {}    # c1 -> uuid
         self.names: dict[str, str] = {}    # uuid -> name
@@ -122,12 +131,29 @@ class Bot:
             self.roll_seq = max(self.roll_seq, max(x["seq"] for x in rows))
         return rows
 
+    def bind_recording(self, identity: dict | None) -> None:
+        identity = identity or {}
+        if identity.get("session_id") != self.recording_identity.get("session_id"):
+            self.reader.bind(None)
+            self.roll_stream, self.roll_seq = None, 0
+        self.recording_identity = identity
+        if identity.get("file_prefix") and identity.get("combat_id"):
+            self.reader.bind(identity["file_prefix"], identity["combat_id"])
+
+    @staticmethod
+    def checked_pos(pos: list[float] | None) -> list[float] | None:
+        if pos is not None and (len(pos) != 3 or any(isinstance(v, bool) or not isinstance(v, (int, float))
+                                                   or not math.isfinite(v) for v in pos)):
+            raise GameError("position must contain exactly three finite numbers [x, y, z]")
+        return pos
+
     # ---- tools ----
 
     def fight_state(self) -> dict:
         """Two game calls: status + turn order, then every party sheet and enemy examine in one batch."""
         self.ensure()
-        st, cb = self.g.multi([("state.status", {}), ("state.combat", {})])
+        st, cb, identity = self.g.multi([("state.status", {}), ("state.combat", {}), ("fightbot.identity", {})])
+        self.bind_recording(identity)
         if st is None or cb is None:
             raise GameError("the game did not answer state.status / state.combat")
         party_rows = st.get("party") or []
@@ -168,6 +194,8 @@ class Bot:
         out["current"] = self.ref(cb.get("current"))
         out["party_can_act"] = [self.ref(u) for u in cb.get("party_can_act") or []]
         out["new_rolls"] = self.rolls_since()
+        out["recording"] = {**self.recording_identity, "read_issues": self.reader.read_issues}
+        out["read_only"] = self.read_only
         return out
 
     def actions(self, char: str) -> dict:
@@ -183,7 +211,18 @@ class Bot:
     def _act(self, op: str, args: dict, wait_s: float = 40.0) -> dict:
         """The job's own outcome (hits and damage as the game reported them). Its rolls reach FightRec's files
         within FLUSH_MS and come with the next fight_state / wait_for_turn: no waiting here."""
+        if self.read_only:
+            raise GameError("actions are disabled in read-only preflight mode")
         self.ensure()
+        cb, identity = self.g.multi([("state.combat", {}), ("fightbot.identity", {})])
+        self.bind_recording(identity)
+        if not cb or not cb.get("active"):
+            raise GameError("fightbot refuses actions outside combat")
+        if args.get("char") not in (cb.get("party_can_act") or []):
+            raise GameError("actor is not a party member able to act this turn")
+        if (not identity or not identity.get("recorder_active") or not identity.get("file_prefix")
+                or identity.get("combat_id") not in (identity.get("party_combats") or [])):
+            raise GameError("current combat is not bound to an active FightRec recording")
         jr = self.g.run_job(op, args, "server", wait_s=wait_s)
         out = {"status": jr.status}
         if jr.result is not None:
@@ -196,16 +235,16 @@ class Bot:
         args: dict[str, Any] = {"char": self.resolve(char), "spell": spell}
         if target:
             args["target"] = self.resolve(target)
-        if pos:
-            args["pos"] = pos
+        if pos is not None:
+            args["pos"] = self.checked_pos(pos)
         return self._act("act.cast", args)
 
     def move(self, char: str, target: str | None = None, pos: list[float] | None = None) -> dict:
         args: dict[str, Any] = {"char": self.resolve(char)}
         if target:
             args["target"] = self.resolve(target)
-        elif pos:
-            args["pos"] = pos
+        elif pos is not None:
+            args["pos"] = self.checked_pos(pos)
         else:
             raise GameError("move needs a target id or a pos [x, y, z]")
         return self._act("act.move_to", args)
@@ -246,18 +285,24 @@ class Bot:
         return {"timeout": True, "waited_s": round(time.time() - t0)}
 
     def rolls(self, since: int = 0) -> dict:
-        return {"rows": self.rolls_since(since), "latest": self.roll_seq, "fight": self.roll_stream}
+        self.bind_recording(self.rpc("fightbot.identity"))
+        rows = self.rolls_since(since)
+        return {"rows": rows, "latest": self.roll_seq, "fight": self.roll_stream,
+                "recording": self.recording_identity, "read_issues": self.reader.read_issues}
 
 
 def build_server(bot: Bot):
     from mcp.server.mcpserver import MCPServer
 
     srv = MCPServer("fightbot", instructions=(
-        "You fight Baldur's Gate 3 combats for the party. Nothing is hidden: you see every combatant, their HP, AC, "
-        "statuses and every roll. Loop: wait_for_turn -> plan from fight_state/actions -> cast/move -> end_turn, "
+        "You fight Baldur's Gate 3 combats for the party using omniscient observations. Respect missing fields, "
+        "recording.read_issues and each roll's evidence flags; do not assume complete roll/status coverage. "
+        "Loop: wait_for_turn -> plan from fight_state/actions -> cast/move -> end_turn, "
         "until wait_for_turn says fight_over. Characters are referred to by the ids fight_state gives (c1, c2, ...)."))
 
     def tool(fn):
+        if bot.read_only and fn.__name__ in {"cast", "move", "end_turn"}:
+            return fn
         @functools.wraps(fn)   # the SDK reads the parameters from the wrapped signature
         def wrapper(**kw):
             try:
@@ -314,7 +359,8 @@ def build_server(bot: Bot):
 
 def main() -> None:
     game = Game(port=int(os.environ.get("FIGHTBOT_PORT", os.environ.get("BG3LE_DEBUG_PORT", "9998"))))
-    bot = Bot(game, LOG_DIR / time.strftime("fightbot-%Y%m%d-%H%M%S.jsonl"))
+    bot = Bot(game, LOG_DIR / time.strftime("fightbot-%Y%m%d-%H%M%S.jsonl"),
+              read_only=os.environ.get("FIGHTBOT_READ_ONLY") == "1")
     build_server(bot).run("stdio")
 
 

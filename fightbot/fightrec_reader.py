@@ -58,6 +58,28 @@ def _label(x: Any) -> Any:
     return x
 
 
+def evidence_issues(value: Any, path: str = "", depth: int = 0) -> list[str]:
+    """Keep loss metadata visible even when unwrap normalizes the value's representation."""
+    if depth > 40:
+        return [path + ": inspection depth exceeded"]
+    issues = []
+    if isinstance(value, dict):
+        for k, v in value.items():
+            p = f"{path}.{k}" if path else str(k)
+            if k in {"cut", "depth_cut", "_cut", "_omitted", "truncated"} and v is True:
+                issues.append(p)
+            issues.extend(evidence_issues(v, p, depth + 1))
+        if value and all(isinstance(k, str) and k.isdigit() for k in value):
+            if sorted(map(int, value)) != list(range(1, len(value) + 1)):
+                issues.append(path + ": sparse numeric indexes")
+    elif isinstance(value, list):
+        for i, v in enumerate(value):
+            issues.extend(evidence_issues(v, f"{path}[{i}]", depth + 1))
+    elif value in ("<omitted>", "<budget>"):
+        issues.append(path + ": " + value)
+    return issues
+
+
 def attack_rolls(hit: dict) -> list[dict]:
     out = []
     for c in _get(hit, "ConditionRolls") or []:
@@ -66,7 +88,7 @@ def attack_rolls(hit: dict) -> list[dict]:
         row = {"type": _label(c.get("RollType")), "natural": res.get("NaturalRoll"), "total": res.get("Total"),
                "vs": c.get("Difficulty")}
         for k, src in (("advantage", "Advantage"), ("disadvantage", "Disadvantage")):
-            if roll.get(src):
+            if roll.get(src) is True or roll.get(src) == "true":
                 row[k] = True
         crit = _label(res.get("Critical"))
         if crit and crit != "None":
@@ -92,14 +114,30 @@ class FightRecReader:
     def __init__(self, folder: Path | None = None):
         self.folder = folder or default_dir()
         self._cache: dict[str, tuple[float, int, list[dict]]] = {}   # sealed part path -> (mtime, size, records)
+        self.binding_required = False
+        self.bound_prefix: str | None = None
+        self.bound_combat: str | None = None
+        self.read_issues: list[str] = []
+
+    def require_binding(self) -> None:
+        self.binding_required = True
+
+    def bind(self, prefix: str | None, combat: str | None = None) -> None:
+        if prefix is not None and (any(c in prefix for c in "/\\:") or not _PART.fullmatch(prefix + "-p00001.jsonl")):
+            raise ValueError("invalid recorder stream prefix")
+        if (prefix, combat) != (self.bound_prefix, self.bound_combat):
+            self._cache.clear()
+        self.bound_prefix, self.bound_combat = prefix, combat
 
     def latest_stream(self) -> list[Path]:
+        if self.binding_required and not self.bound_prefix:
+            return []
         if not self.folder.is_dir():
             return []
         streams: dict[str, list[tuple[int, Path]]] = {}
         for p in self.folder.glob("*-server-fight*-p*.jsonl"):
             m = _PART.match(p.name)
-            if m:
+            if m and (self.bound_prefix is None or m["stream"] == self.bound_prefix):
                 streams.setdefault(m["stream"], []).append((int(m["n"]), p))
         if not streams:
             return []
@@ -111,36 +149,61 @@ class FightRecReader:
         hit = self._cache.get(str(p))
         if hit and hit[0] == st.st_mtime and hit[1] == st.st_size:
             return hit[2]
+        if st.st_size > 64 << 20:
+            self.read_issues.append(p.name + ": input exceeds 64 MiB limit")
+            return []
         recs, sealed = [], False
-        for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
+        lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
+        if self.bound_prefix:
+            try:
+                h = json.loads(lines[0])
+            except (IndexError, ValueError):
+                self.read_issues.append(p.name + ": header unavailable during flush")
+                return []
+            if h.get("kind") != "part_header" or h.get("context") != "server" or h.get("combat_id") != self.bound_combat:
+                self.read_issues.append(p.name + ": recorder identity mismatch")
+                return []
+        start_issues = len(self.read_issues)
+        for i, line in enumerate(lines, 1):
             try:
                 r = json.loads(line)
             except ValueError:
+                self.read_issues.append(f"{p.name}:{i}: malformed or torn record")
                 continue   # a torn last line: the active part is being rewritten
+            if not isinstance(r, dict):
+                self.read_issues.append(f"{p.name}:{i}: non-object record")
+                continue
             if r.get("kind") == "part_trailer":
                 sealed = True
             elif r.get("kind") != "part_header":
                 recs.append(r)
-        if sealed:
+        if sealed and len(self.read_issues) == start_issues:
             self._cache[str(p)] = (st.st_mtime, st.st_size, recs)
         return recs
 
     def records(self) -> tuple[str | None, list[dict]]:
+        self.read_issues = []
         parts = self.latest_stream()
+        if len(parts) > 256:
+            self.read_issues.append("stream exceeds 256-part live reader limit")
+            return self.bound_prefix, []
         recs: list[dict] = []
         for p in parts:
             recs.extend(self._read(p))
         recs.sort(key=lambda r: r.get("seq") or 0)
-        return (_PART.match(parts[-1].name)["stream"] if parts else None), recs
+        return (_PART.match(parts[-1].name)["stream"] if parts else self.bound_prefix), recs
 
     def rows(self, since: int = 0) -> dict:
         """{stream, latest, rows}: roll rows with seq > since, from the newest fight."""
         stream, recs = self.records()
-        dice_by_cast: dict[str, list[dict]] = {}
+        dice_by_cast: dict[tuple, list[dict]] = {}
         rows: list[dict] = []
         latest = 0
         for r in recs:
             seq, kind, d = r.get("seq") or 0, r.get("kind"), r.get("data") or {}
+            if not isinstance(d, dict):
+                self.read_issues.append(f"seq {seq}: non-object data")
+                continue
             latest = max(latest, seq)
             if kind == "BeforeDealDamage":
                 hit = unwrap(d.get("hit")) or {}
@@ -148,7 +211,9 @@ class FightRecReader:
                 if guid and guid != NULL_GUID:
                     dice = damage_dice(hit.get("Damage") or {})
                     if dice:
-                        dice_by_cast[guid] = dice
+                        key = (guid, hit.get("StoryActionId"))
+                        dice_by_cast.setdefault(key, []).append({"seq": seq, "dice": dice,
+                            "issues": evidence_issues(d.get("hit"), "before.hit")})
                 continue
             if seq <= since:
                 continue
@@ -161,13 +226,26 @@ class FightRecReader:
                        "damage": {"total": dealt.get("TotalDamageDone"),
                                   "by_type": {x.get("type"): x.get("amount") for x in dealt.get("DamageList") or []
                                               if isinstance(x, dict)}}}
-                dice = dice_by_cast.get(hit.get("SpellCastGuid") or "")
-                if dice:
-                    row["damage"]["dice"] = dice
+                issues = evidence_issues(d.get("hit"), "hit") + evidence_issues(d.get("result"), "result")
+                key = (hit.get("SpellCastGuid"), hit.get("StoryActionId"))
+                candidates = dice_by_cast.get(key, [])
+                if len(candidates) == 1:
+                    before = candidates[0]
+                    row["damage"]["dice"] = before["dice"]
+                    row["damage"]["dice_provenance"] = {"before_seq": before["seq"],
+                        "join": "unique preceding cast+story_action", "target_independently_verified": False}
+                    issues.extend(before["issues"])
+                    del dice_by_cast[key]  # never reuse one target's dice for a later hit
+                elif candidates:
+                    row["damage"]["dice_unavailable"] = "ambiguous multiple pre-damage records for this cast/action"
+                    issues.append("damage dice target attribution ambiguous")
+                row["evidence_complete"] = not issues
+                if issues:
+                    row["evidence_issues"] = issues
                 rows.append(row)
             elif kind == "AttackedBy" and d.get("cause") == "Attack" and d.get("amount") == 0:
                 rows.append({"seq": seq, "kind": "no_damage", "attacker": d.get("source"), "target": d.get("target"),
-                             "note": "missed or saved: the engine gives no roll for this"})
+                             "note": "zero attack damage: hit/miss/save/immune/blocked is unresolved; this event has no roll numbers"})
             elif kind == "RollResult":
                 rows.append({"seq": seq, "kind": "roll_result", "event": d.get("event"), "roller": d.get("roller"),
                              "against": d.get("subject"), "result": d.get("result")})

@@ -415,7 +415,7 @@ class Game:
                 return [], [], False
             parts = [_long_bracket(json.dumps({"op": op, "args": args or {}}, separators=(",", ":")), "R")
                      for op, args in calls]
-            code = "local R=" + RPC_ROOT + ".rpc return '['.." + "..','..".join(parts) + "..']'"
+            code = "local R=" + RPC_ROOT + ".rpc\nreturn '['.." + "..','..".join(parts) + "..']'"
             t0 = time.time()
             try:
                 raw = self.eval(code, context=context, timeout=timeout)

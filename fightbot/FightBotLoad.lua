@@ -27,13 +27,29 @@ BG3AI.VERSION = "0.1.0-fightbot"
 for _, path in ipairs(FILES) do
     local src = Ext.IO.LoadFile(BASE .. path)
     if not src then error("[FightBot] missing " .. BASE .. path .. ": run fightbot\\install.ps1 first", 0) end
-    local fn, err = load(src, "@BG3AI/" .. path)
+    local fn, err = Ext.Utils.LoadString(src)
     if not fn then error("[FightBot] " .. path .. ": " .. tostring(err), 0) end
     local ok, e = pcall(fn)
     if not ok then error("[FightBot] " .. path .. ": " .. tostring(e), 0) end
 end
 
 BG3AI.Visibility.OMNISCIENT = true
+BG3AI.RPC.register("fightbot.identity", function()
+    local r = FightRecV2
+    local f = r and r.fight
+    local combats, seen = {}, {}
+    for _, row in ipairs(Osi.DB_Players:Get(nil)) do
+        local c = Osi.CombatGetGuidFor(row[1])
+        if type(c) == "string" and c ~= "00000000-0000-0000-0000-000000000000" and not seen[c] then
+            seen[c] = true
+            combats[#combats + 1] = c
+        end
+    end
+    return { recorder_loaded = r ~= nil, recorder_active = r and r.generation and r.generation.active or false,
+        session_id = r and r.session_id or nil, combat_id = f and f.combat or nil,
+        file_prefix = f and f.stream and f.stream.prefix:match("([^/\\]+)$") or nil,
+        party_combats = combats }
+end)
 BG3AI.FightBotLoaded = true
 Ext.Utils.Print("[FightBot] ready: BG3AI " .. BG3AI.VERSION .. ", omniscient"
     .. (FightRecV2 and "" or " (FightRec v2 is not loaded: no rolls will be recorded)"))

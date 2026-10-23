@@ -5,12 +5,15 @@ local function ok(c, n) if c then pass = pass + 1 print("ok   " .. n) else fail 
 
 local printed = {}
 local function mockExt(server)
+    FB_OPS = {}
     Ext = {
         IsServer = function() return server end,
-        Utils = { Print = function(s) printed[#printed + 1] = s end, PrintWarning = function(s) printed[#printed + 1] = s end },
+        Utils = { LoadString = function(s) return load(s) end,
+            Print = function(s) printed[#printed + 1] = s end, PrintWarning = function(s) printed[#printed + 1] = s end },
         IO = { LoadFile = function(p)
             if p:find("Missing", 1, true) then return nil end
             return ("FB_LOADED[#FB_LOADED + 1] = %q"):format(p)
+                .. (p == "BG3AI/Shared/RPC.lua" and " BG3AI.RPC = { register = function(n, f) FB_OPS[n] = f end }" or "")
                 .. (p == "BG3AI/Server/Visibility.lua" and " BG3AI.Visibility = {}" or "")
         end },
     }
@@ -33,6 +36,12 @@ mockExt(true)
 BG3AI, FightRecV2 = nil, {}
 dofile("fightbot/FightBotLoad.lua")
 ok(not printed[#printed]:find("not loaded", 1, true), "with FightRec v2 loaded, no warning")
+FightRecV2 = { session_id = "session", generation = { active = true },
+    fight = { combat = "combat", stream = { prefix = "FightRec2/session-server-fight01" } } }
+Osi = { DB_Players = { Get = function() return { { "actor" } } end }, CombatGetGuidFor = function() return "combat" end }
+local identity = FB_OPS["fightbot.identity"]()
+ok(identity.file_prefix == "session-server-fight01" and identity.combat_id == "combat", "identity is bound to the active recorder")
+ok(identity.recorder_active == true and identity.party_combats[1] == "combat", "identity reports real party combat")
 
 mockExt(false)
 BG3AI = nil
