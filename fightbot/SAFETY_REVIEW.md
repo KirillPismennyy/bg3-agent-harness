@@ -5,6 +5,14 @@ Verdict: installation and connection defects were corrected, and one supervised 
 damage without a captured attack d20 or a visible attack-roll log entry. The Osiris cast path
 needs comparison with player input before proceeding. No second bot action or end-turn was issued.
 
+Follow-up comparison: the user manually cast Gale's Fire Bolt at Taman and missed. Server seq 194
+records the targeted cast, seq 199 reports zero attack damage, and seq 200 records cast completion.
+The client log contains a VMHitFailedEntry with an Attack Roll tooltip and Taman's AC 13. In contrast,
+the bot attack has a VMHitDamagedEntry with a Damage Roll tooltip and no attack-roll entry. The UI's
+numeric d20 remains opaque in this capture. This strengthens the concern about the Osiris cast route;
+it does not yet establish its exact engine flags or prove normal attack resolution is bypassed.
+The runtime enum exposes IgnoreSpellRolls, but no surviving cast-state entity remained to inspect.
+
 The user authorized local fixes and declined sending this harness to Claude. Codex authored these
 changes locally. No Claude API review or Claude gameplay session was started for this test.
 

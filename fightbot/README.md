@@ -10,6 +10,10 @@ records and visible log contained no attack-roll entry. Normal attack-roll behav
 do not treat this as validated player-equivalent combat or use unattended. Movement and full fights
 remain untested on Windows.
 
+A manual Gale Fire Bolt miss produced an Attack Roll tooltip (target AC 13), whereas the bot attack
+only produced a Damage Roll tooltip. Numeric d20 capture remains incomplete; the cast-route
+comparison and exact cause are still under investigation. See `SAFETY_REVIEW.md`.
+
 ## Setup on Windows
 
 Keep `fightbot`, `bridge`, and `mod` side by side. With uv installed:
