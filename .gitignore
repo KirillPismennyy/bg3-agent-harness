@@ -46,3 +46,7 @@ CLAUDE.local.md
 *.mp4
 *.mkv
 *.webm
+
+# Offline replay adapter build outputs
+/fightbot/replay_adapter/bin/
+/fightbot/replay_adapter/obj/

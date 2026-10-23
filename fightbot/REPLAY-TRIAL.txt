@@ -1,0 +1,76 @@
+Offline saved-trial replay
+
+Build with .NET8 and an explicitly selected simulator assembly:
+dotnet restore fightbot/replay_adapter/TrialReplay.csproj --configfile fightbot/replay_adapter/NuGet.Config
+dotnet build fightbot/replay_adapter/TrialReplay.csproj -c Release --no-restore -p:SimulatorAssembly=/absolute/path/to/bg3sim.dll
+
+Required simulator SHA256:
+94f7ef46cd62dd698df08a986f5b99e6fbda804ad1b61a00ce6d7768e0de9bba
+Python checks bridge presence and adjacent simulator bytes BEFORE launching dotnet;
+the bridge repeats the simulator/rules hash checks inside its caught entrypoint.
+Missing/wrong reference is a structured refusal, not a seeded fallback.
+
+Run against one explicitly selected immutable trial and a NEW output directory:
+python fightbot/replay_trial.py /private/trial --output /private/new-strict-report
+python fightbot/replay_trial.py /private/trial --profile /private/conditional-profile.json --output /private/new-conditional-report
+No latest lookup. The strict path refuses missing native operands without invoking
+the engine. Conditional profiles bind trial/freeze/rules/supplement hashes and
+declare controlled geometry/build projections, unknown state and exclusions.
+No profile can overwrite observed HP/positions/source/current pools or supply an
+oracle result as an operand. Output directories cannot be inside the source trial.
+Exit0 means completed conditional comparison without unexplained compared-field
+mismatches; exit2 strict refusal, exit3 mismatch, exit1 runtime/integrity refusal.
+Exit0 never means native/full-scene/RNG parity.
+
+Input/output separation
+Original bytes, including AFTER, are hash verified first. Before engine admission,
+only AFTER's top-level started_ms/finished_ms/owner_binding envelope is decoded;
+unknown value spans are skipped lexically without constructing expected outcomes.
+This supplies a hash-bound upper transaction cut for BOTH native hit and damage
+producers. Expected outcome objects are decoded only AFTER actual API execution.
+The damage producer must agree with redundant hit/source SpellId, caster/owner,
+story/GUID, chronology and completeness/error flags. Its missing target UUID is
+disclosed as a GUID/story inference through the unique direct hit, never fabricated.
+
+The source compiler consumes BEFORE level/proficiency/casting ability. Native
+attack/damage totals never manufacture compiler inputs. The explicit selected-d20
+result seam does not reconstruct an ordered pair or discarded face16. Direct
+individual damage faces require qualified one-die descriptors and no rerolls.
+
+Comparisons use the actual immutable AttackResolutions entry: natural, requested
+mode, totalUsedForComparison and armorUsedForComparison versus native stored
+NaturalRoll/Total/Difficulty. These names describe comparison operands; they do
+not causally decompose an effective bonus. Typed native damage packets are compared
+to actual typed damage events, so unexpected Cold damage cannot match Fire by
+sharing a numeric total. HP/AP/raw+usable movement/position/status comparisons
+remain separate. Known target-status projection exclusions stay explicit and keep
+full-scene admission blocked even when all admitted comparisons match.
+
+Staleness is not hidden by checkpoint inheritance. Profiles must explicitly bound
+latest checkpoint age AND each actor/target resource field-source age separately
+before/after. Reports retain both clocks, full base chains and consumed source
+locations. Every resource age must satisfy0<=age<=its explicit limit. Checkpoints
+require explicit integer begin_t/end_t with begin_t==row.t<=end_t<=boundary;
+missing completion never defaults to the start. A parent must complete by the
+child START, not merely by the child completion. Sample st may legitimately lie
+after row.t within the validated capture interval; future embedded timestamps
+beyond read completion refuse. Status supplements have their own finite limits and preserve their
+non-atomic/session/generation restrictions. A present null/malformed/failed exact
+raw_resource_entries facet refuses; only an ABSENT facet permits explicitly
+qualified checkpoint fallback. Native raw and usable movement remain distinct.
+
+Tests
+python -m unittest discover -s fightbot/tests -p test_replay_trial.py -v
+Fixture-independent tests run normally. Private integration tests visibly skip
+unless BOTH BG3_REPLAY_TEST_TRIAL and BG3_REPLAY_TEST_PROFILE are explicitly set.
+Explicitly configured invalid files fail; they are not silently skipped. Private
+integration tests use the retained entangled reference trial/profile contract.
+Do not commit private profiles, raw captures, outputs, bin/obj, or caches.
+
+Only these reviewed source paths belong in the repository:
+fightbot/replay_trial.py
+fightbot/tests/test_replay_trial.py
+fightbot/replay_adapter/Program.cs
+fightbot/replay_adapter/TrialReplay.csproj
+fightbot/replay_adapter/NuGet.Config
+fightbot/REPLAY-TRIAL.txt
