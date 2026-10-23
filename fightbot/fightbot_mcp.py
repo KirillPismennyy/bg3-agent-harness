@@ -204,7 +204,7 @@ class Bot:
         r = self.rpc("state.actions", {"uuid": u}) or {}
         acts = []
         for a in r.get("actions") or []:
-            acts.append({k: a[k] for k in ("spell", "name", "level", "cost", "range", "target", "available", "reason")
+            acts.append({k: a[k] for k in ("spell", "name", "level", "cost", "range", "target", "available", "reason", "sources")
                          if k in a})
         return {"char": self.ref(u), "resources": r.get("resources"), "actions": acts}
 

@@ -3796,8 +3796,12 @@ test("state.actions: lists only prepared class spells (A4: S065 showed Shadowhea
         stats[id] = { Level = 1, SpellType = "Target", UseCosts = "ActionPoint:1;SpellSlotsGroup:1:1:1" }
     end
     local function book(id, kind) return { Id = { Prototype = id, OriginatorPrototype = id }, PrepareType = kind } end
+    stats.Projectile_FireBolt = { Level = 0, SpellType = "Projectile", UseCosts = "ActionPoint:1" }
+    local racial, class = book("Projectile_FireBolt", "AlwaysPrepared"), book("Projectile_FireBolt", "AlwaysPrepared")
+    racial.SpellCastingAbility, racial.Id.SourceType, racial.Id.ProgressionSource = "Intelligence", "ProgressionRace", "race-source"
+    class.SpellCastingAbility, class.Id.SourceType, class.Id.ProgressionSource = "Wisdom", "ProgressionClass", "class-source"
     world[P1].comps.SpellBook = { Spells = { book("Target_Bless", "RequiresPreparation"),
-        book("Target_CureWounds", "RequiresPreparation"), book("Target_Sanctuary", "AlwaysPrepared") } }
+        book("Target_CureWounds", "RequiresPreparation"), book("Target_Sanctuary", "AlwaysPrepared"), racial, class } }
     world[P1].comps.SpellBookPrepares = { PreparedSpells = { meta_id("Target_CureWounds") } }
     BG3AI.State.spellCache = {}
     local ok, list = pcall(BG3AI.State.actions, P1)
@@ -3806,7 +3810,10 @@ test("state.actions: lists only prepared class spells (A4: S065 showed Shadowhea
     eq(ok, true, "actions read: " .. tostring(list))
     local ids = {}
     for _, a in ipairs(list) do ids[#ids + 1] = a.spell end
-    eq(table.concat(ids, ","), "Target_CureWounds,Target_Sanctuary", "no unprepared Bless")
+    eq(table.concat(ids, ","), "Target_CureWounds,Target_Sanctuary,Projectile_FireBolt", "no unprepared Bless; duplicate prototypes stay one action")
+    eq(#list[3].sources, 2, "both Fire Bolt source identities retained")
+    eq(list[3].sources[1].SpellCastingAbility, "Intelligence", "racial ability retained")
+    eq(list[3].sources[2].ProgressionSource, "class-source", "class progression retained")
 end)
 
 test("state.combat hp_pct: a member at 1/218 HP reads 1 %, not 0 (S076 Karlach called downed)", function()

@@ -137,6 +137,19 @@ class BotTest(unittest.TestCase):
         self.assertEqual(a["actions"][0], {"spell": "Target_MainHandAttack", "name": "Main Hand Attack",
                                            "cost": {"action": 1}, "available": True})
 
+    def test_actions_preserve_distinct_spell_sources(self):
+        original = self.g._op
+        sources = [{"SpellCastingAbility": "Intelligence", "ProgressionSource": "race"},
+                   {"SpellCastingAbility": "Wisdom", "ProgressionSource": "class"}]
+        def read(op, args):
+            result = original(op, args)
+            if op == "state.actions":
+                result["actions"][0]["sources"] = sources
+            return result
+        self.g._op = read
+        self.bot.fight_state()
+        self.assertEqual(self.bot.actions("c1")["actions"][0]["sources"], sources)
+
     def test_wait_for_turn_waits_for_a_fight_then_for_our_turn_then_reports_its_end(self):
         self.g.combat = [{"active": False}, {"active": True, "order": FakeGame.order()},
                          {"active": True, "party_can_act": [P1], "order": FakeGame.order(True)},

@@ -532,6 +532,17 @@ local function weaponRanges(e)
     return r
 end
 
+local function spellSource(s)
+    local out = {}
+    for _, k in ipairs({ "Prototype", "OriginatorPrototype", "SourceType", "Source", "ProgressionSource" }) do
+        local ok, v = pcall(function() return s.Id[k] end)
+        if ok and v ~= nil then out[k] = tostring(v) end
+    end
+    local ok, ability = pcall(function() return s.SpellCastingAbility end)
+    if ok and ability ~= nil then out.SpellCastingAbility = tostring(ability) end
+    return out
+end
+
 function S.actions(uuid)
     local e = V.entity(uuid)
     if not e then error("unknown character", 0) end
@@ -556,9 +567,14 @@ function S.actions(uuid)
                 elseif info.container then
                     variants[info.container] = variants[info.container] or {}
                     table.insert(variants[info.container], { spell = id, name = info.name })
-                elseif not byId[id] then
-                    byId[id] = { s = s, info = info }
-                    order[#order + 1] = id
+                else
+                    if not byId[id] then
+                        byId[id] = { s = s, info = info, sources = {} }
+                        order[#order + 1] = id
+                    end
+                    -- A prototype may be granted by multiple classes, races or items with different abilities.
+                    -- Keep each prepared source; the controller's prototype-only cast does not select one.
+                    byId[id].sources[#byId[id].sources + 1] = spellSource(s)
                 end
             end
         end
@@ -568,7 +584,7 @@ function S.actions(uuid)
     for _, id in ipairs(order) do
         local info = byId[id].info
         local cost = parseCosts(info.use_costs)
-        local a = { spell = id, name = info.name, cost = next(cost) and cost or nil,
+        local a = { spell = id, name = info.name, sources = byId[id].sources, cost = next(cost) and cost or nil,
             target = TARGET_KIND[info.type] or "entity" }
         if info.level and info.level > 0 then a.level = info.level end
         local rng = tonumber(info.range) or (type(info.range) == "string" and info.range ~= "" and (wranges[info.range] or info.range)) or nil
