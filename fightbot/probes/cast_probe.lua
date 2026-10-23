@@ -49,6 +49,23 @@ local function components(e)
     return out
 end
 
+-- Bitfield userdata can stringify as *RECURSION* inside the full component dump.
+-- Read this decisive field directly while the cast is alive; never write it.
+local function snapshot(cast, tick)
+    local comps = components(cast)
+    local read = { tick = tick, components = comps, flagged = flagged(comps, "", {}) }
+    local ok, text, number = pcall(function()
+        local options = cast.SpellCastState.CastOptions
+        return tostring(options), tonumber(options)
+    end)
+    if ok then
+        read.cast_options = { text = text, numeric = number }
+    else
+        read.cast_options_error = tostring(text)
+    end
+    return read
+end
+
 local function uuidOf(e)
     local ok, u = pcall(function() return e.Uuid.EntityUuid end)
     return ok and u or nil
@@ -74,8 +91,7 @@ local function onCasting(caster)
     P.n = P.n + 1
     local cu = uuidOf(caster)
     local rec = { n = P.n, caster = cu, caster_name = cu and nameOf(cu), reads = {} }
-    local first = components(cast)
-    rec.reads[1] = { tick = 0, components = first, flagged = flagged(first, "", {}) }
+    rec.reads[1] = snapshot(cast, 0)
     pcall(function() rec.spell = cast.SpellCastState.SpellId.Prototype end)
     P.pending[#P.pending + 1] = { rec = rec, cast = cast, ticks = 0, next = 1 }
 end
@@ -86,8 +102,7 @@ function P.tick()
         job.ticks = job.ticks + 1
         local due = P.LATER_TICKS[job.next]
         if due and job.ticks >= due then
-            local comps = components(job.cast)
-            job.rec.reads[#job.rec.reads + 1] = { tick = job.ticks, components = comps, flagged = flagged(comps, "", {}) }
+            job.rec.reads[#job.rec.reads + 1] = snapshot(job.cast, job.ticks)
             job.next = job.next + 1
         end
         if not P.LATER_TICKS[job.next] then
