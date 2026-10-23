@@ -14,6 +14,7 @@ for _, path in ipairs({
     "Server/Navigation.lua",
     "Server/Guard.lua",
     "Server/Actions.lua",
+    "Server/CastRolls.lua", -- Osiris casts skip their rolls unless this clears IgnoreSpellRolls on them
 }) do
     U.require(path)
 end

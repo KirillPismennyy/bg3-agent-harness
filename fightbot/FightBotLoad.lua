@@ -10,7 +10,7 @@ local BASE = "BG3AI/"
 local FILES = {
     "Shared/RPC.lua", "Shared/Util.lua", "Shared/Mem.lua", "Shared/HotbarMap.lua",
     "Server/Visibility.lua", "Server/State.lua", "Server/Events.lua", "Server/Navigation.lua",
-    "Server/Guard.lua", "Server/Actions.lua",
+    "Server/Guard.lua", "Server/Actions.lua", "Server/CastRolls.lua",
 }
 
 if not Ext.IsServer() then

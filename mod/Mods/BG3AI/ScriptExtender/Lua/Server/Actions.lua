@@ -98,6 +98,13 @@ A.PICKUP_REORDER_MS = 1500 -- pickup: an order gone from the task queue (nothing
 -- The engine's CastSpellFailed carries no reason. S024-S041: ~12 "the action failed — purged_tasks=1" in
 -- combat_turn (Toll the Dead, Ranged Attack extra attacks, Spiritual Weapon attacks), each read as a mystery.
 -- Say what a player would see at that moment: the target gone, no line of sight, or the projectile's blocked path.
+-- An Osiris cast skips its spell rolls unless CastRolls clears IgnoreSpellRolls on it (Server/CastRolls.lua).
+function A.arm_rolls(job, char, spell)
+    local CR = BG3AI.CastRolls
+    if CR and CR.arm then pcall(CR.arm, job, char, spell)
+    elseif job then job.rolls = { fix = "unavailable", why = "Server/CastRolls.lua is not loaded" } end
+end
+
 function A.cast_failed_why(char, target, spell)
     local why = "the game refused the cast (no reason given)"
     -- S059 08:57-08:59: Dimension Door refused x3 with "the shot's path is blocked". It is a two-step teleport:
@@ -2350,9 +2357,11 @@ reg("cast", function(args)
             -- Engine form has 6 inputs (6th = WithoutMove), verified live
             -- on bg3le; the 5-input form is kept as a fallback for builds
             -- without it.
+            A.arm_rolls(job, char, spell)
             G.osi_forms("UseSpellAtPosition", { char, spell, pos[1], pos[2], pos[3], without_move },
                 { char, spell, pos[1], pos[2], pos[3] })
         else
+            A.arm_rolls(job, char, spell)
             G.osi("UseSpell", char, spell, targets[1], targets[2] or NULL_GUID, without_move)
             A.give_second_pick(job, char, spell, targets, landing)
         end
@@ -2552,7 +2561,7 @@ reg("cast", function(args)
                 end
                 local res = { cast = spell, extra_attack = check.extra_attack, walked_into_range = job.walked,
                     upcast_ignored = upcast_ignored, landed_m_from_target = landing, fell_m = job.fell_m,
-                    via = ui and "hotbar" or nil, targets_n = ui and #targets or nil }
+                    via = ui and "hotbar" or nil, targets_n = ui and #targets or nil, rolls = job.rolls }
                 if #job.hits > 0 then
                     res.damage = job.hits
                     local total = 0
@@ -2605,6 +2614,7 @@ reg("cast", function(args)
                     j.walked = U.round(walk_m, 1)
                     j.osi_task = "spell"
                     j.ordered_ms, j.ordered_pos = RPC.now_ms(), G.pos(char)
+                    A.arm_rolls(j, char, spell)
                     G.osi("UseSpell", char, spell, targets[1], NULL_GUID, without_move)
                     A.give_second_pick(j, char, spell, targets, landing)
                 end)
@@ -3026,7 +3036,11 @@ reg("sneak", function(args)
     local check = G.check_cast(char, "Shout_Hide", char, nil, nil)
     return start("sneak", char, {
         timeout_ms = 8000,
-        start = function(job) job.osi_task = "spell"; G.osi("UseSpell", char, "Shout_Hide", char, NULL_GUID, 1) end,
+        start = function(job)
+            job.osi_task = "spell"
+            A.arm_rolls(job, char, "Shout_Hide")   -- the Stealth check is a spell roll too
+            G.osi("UseSpell", char, "Shout_Hide", char, NULL_GUID, 1)
+        end,
         on_tick = function(job)
             if G.b(G.q("HasActiveStatus", char, "SNEAKING")) then
                 RPC.finish_job(job, "done", { sneaking = true })

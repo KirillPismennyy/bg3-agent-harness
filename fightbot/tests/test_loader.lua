@@ -23,8 +23,9 @@ FB_LOADED = {}
 mockExt(true)
 BG3AI, FightRecV2 = nil, nil
 dofile("fightbot/FightBotLoad.lua")
-ok(#FB_LOADED == 10 and FB_LOADED[1] == "BG3AI/Shared/RPC.lua" and FB_LOADED[10] == "BG3AI/Server/Actions.lua",
-    "the 10 server files load in BootstrapServer's order (no recorder of its own)")
+ok(#FB_LOADED == 11 and FB_LOADED[1] == "BG3AI/Shared/RPC.lua" and FB_LOADED[10] == "BG3AI/Server/Actions.lua"
+    and FB_LOADED[11] == "BG3AI/Server/CastRolls.lua",
+    "the 11 server files load in BootstrapServer's order (no recorder of its own)")
 ok(BG3AI.Visibility.OMNISCIENT == true and BG3AI.FightBotLoaded, "omniscient on")
 ok(printed[#printed]:find("FightRec v2 is not loaded", 1, true), "it says when FightRec v2 is missing")
 local n = #FB_LOADED

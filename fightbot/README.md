@@ -16,6 +16,14 @@ suppresses spell rolls. That route remains unfixed: do not use it for player-equ
 The corrected read-only probe captures direct bitfield labels and cast-state lifecycle events;
 see `SAFETY_REVIEW.md` for evidence and the earlier investigation history.
 
+**Fix to test (offline-tested only):** `mod/.../Server/CastRolls.lua` removes `IgnoreSpellRolls`, and only
+that option, from the cast state of each cast the guard orders. It acts when the state appears, reads the
+write back, and re-checks for 30 ticks. Every cast result now has `rolls.fix`: `rolls_restored`,
+`not_cleared`, `cast_state_not_seen` or `unavailable`, with the options before and after. The other Ignore*
+options stay: the guard does those checks and charges the costs, so the engine doing them too could refuse
+or double-charge. Live acceptance: with the cast probe loaded, a bot attack shows no `IgnoreSpellRolls` and
+has a non-empty `ConditionRolls` and an Attack Roll log entry, and some bot attacks against a high AC miss.
+
 A manual Gale Fire Bolt miss produced an Attack Roll tooltip (target AC 13), whereas the bot attack
 only produced a Damage Roll tooltip. Numeric d20 capture remains incomplete; the cast-route
 comparison and exact cause are still under investigation. See `SAFETY_REVIEW.md`.
