@@ -63,3 +63,35 @@ Status projections now retain availability metadata through fight_state, includi
 versus metadata classification, actual visible/omniscient scope and hidden markers. Missing status
 components or failed lookups remain unknown. Live read-only MCP verification and 30 Python tests
 plus 15 Lua assertions cover this contract. Preserve this metadata in any simulator intake.
+
+## Verified source-correct bot case
+
+The experimental explicit-source cast now has native evidence: Shadowheart racial Fire Bolt,
+cast `78507c4e-b32a-d461-ff0a-9b724a91f13d`, StoryActionId415, used Intelligence10 with
+proficiency2. The target-hit event directly reported natural14, total16, AC13 and Intelligence.
+The joined BeforeDealDamage event supplied one d10 face4. Taman HP19 became15; one action was
+charged; movement remained9. Lifecycle records retained the racial source and Intelligence cache
+through destruction. A readable cache alone was not used to qualify the resolved ability.
+
+The unchanged production simulator independently passed five new assertions: bonus2, total16,
+hit, Fire4 and action1. The operand adapter derived modifier0 from Intelligence10; separate native
+outcome oracles were loaded only after engine execution. No simulator rule change was required.
+Frozen operand SHA256: `1b54cb55df32d7068c16b59b1af201b3f280e65518ca5179f45a96a657337d13`;
+result SHA256: `a602e769ce49027c65343268201fdd3e5d667e8a771033a42462ee332adb98e8`.
+Raw captures remain local and are not included in this repository.
+
+This is a conditional selected-face comparison in a controlled two-actor scene. Raw discarded4
+and empty RollsCount remain uninterpreted; native RNG, complete scene/status conversion and
+player-request equivalence are unproved. Source/cache writes remain experimental and opt-in;
+never accept a cast from readback or `rolls_restored` without executed roll and target evidence.
+
+Use [RELOAD-READINESS.md](RELOAD-READINESS.md) for one protocol-5 debugger owner, generation-bound
+READY tokens and automatic rearming. Human actions made before READY can still be missed.
+The read-only [numerical event probe](probes/MISS-ROLL-PROBE.md) captures short-lived roll events
+without modifying recorder source or native game components.
+
+The mandatory-source gate was then live-checked after an automatically instrumented checkpoint
+reload. Prototype-only Shadowheart Fire Bolt refused before an order because racial Intelligence
+differs from actor-default Wisdom. AP1, movement9 and TamanHP19 remained unchanged; cast-roll
+armed/cleared/failed counters stayed zero. Offline verification: 45 Python tests,107 source checks,
+231 action checks (six real gate integrations),13 roll-fix checks and1246 observer assertions.

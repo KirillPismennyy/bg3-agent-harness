@@ -46,4 +46,3 @@ Source hashes at delivery:
 - pinned Hit header: `f61be312eaa0801e2603934b4fa43c6d68113c811af54ccfc59449d97becd345`
 
 Live follow-up with this corrected probe captured Shadowheart's Fire Bolt against Taman (cast 78507c4e-b32a-d461-ff0a-9b724a91f13d, StoryActionId415). TargetHit was complete=true, errors empty, and directly reported Intelligence, natural14, total16, AC13. An independently joined server damage event supplied one d10 face4. Source/cache intervention remains experimental; this does not establish native RNG or player-request equivalence.
-

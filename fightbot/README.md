@@ -110,3 +110,20 @@ The strict native protocol regression checks version negotiation, the uncorrelat
 per-connection sequence reset, sequenced settings, and global-frame evaluation. The separate bridge
 Linux fake has a bare-connect leak reproduction that is timing/platform sensitive on Windows; its
 failure is not a native BG3SE test. See the local safety review for the recorded results.
+
+For reproducible live experiments, use the single-connection
+[supervised owner](RELOAD-READINESS.md) and wait for READY after every reload before human input.
+Prototype-only Osiris casts refuse when current prepared sources are ambiguous, unreadable or use a
+casting ability different from the actor default. Select the exact observed source explicitly for
+the experimental source/cache intervention. It supports one entity target and remains unproven as a
+complete player-request equivalent. Same-default legacy casts also disclose unproven provenance.
+The [verified trial and limits](SIM-TRIALS.md#verified-source-correct-bot-case) document the native
+racial Intelligence Fire Bolt and bounded simulator comparison.
+
+Additional Lua regressions from the repository root:
+
+```powershell
+lua fightbot/tests/test_source_cast.lua mod/Mods/BG3AI/ScriptExtender/Lua/Server/CastRolls.lua
+lua fightbot/tests/test_actions_source_gate.lua .
+lua fightbot/tests/test_miss_roll_probe.lua fightbot/probes/miss_roll_probe.lua
+```

@@ -231,12 +231,15 @@ class Bot:
             out["error"] = jr.error
         return out
 
-    def cast(self, char: str, spell: str, target: str | None = None, pos: list[float] | None = None) -> dict:
+    def cast(self, char: str, spell: str, target: str | None = None, pos: list[float] | None = None,
+             source: dict[str, str] | None = None) -> dict:
         args: dict[str, Any] = {"char": self.resolve(char), "spell": spell}
         if target:
             args["target"] = self.resolve(target)
         if pos is not None:
             args["pos"] = self.checked_pos(pos)
+        if source is not None:
+            args["source"] = source
         return self._act("act.cast", args)
 
     def move(self, char: str, target: str | None = None, pos: list[float] | None = None) -> dict:
@@ -327,10 +330,13 @@ def build_server(bot: Bot):
         return bot.actions(char)
 
     @tool
-    def cast(char: str, spell: str, target: str | None = None, pos: list[float] | None = None) -> dict:
+    def cast(char: str, spell: str, target: str | None = None, pos: list[float] | None = None,
+             source: dict[str, str] | None = None) -> dict:
         """Use an action: an attack, spell, Dash, Shove, Jump, Hide, a potion... `spell` is the id from actions,
-        `target` a combatant id, or `pos` [x, y, z] for a ground target. Returns the outcome and its rolls."""
-        return bot.cast(char=char, spell=spell, target=target, pos=pos)
+        `target` a combatant id, or `pos` [x, y, z] for a ground target. Optional `source` is a full observed
+        prepared source for an EXPERIMENTAL source/cache intervention, not proven player equivalence.
+        Returns the outcome, rolls, and intervention report."""
+        return bot.cast(char=char, spell=spell, target=target, pos=pos, source=source)
 
     @tool
     def move(char: str, target: str | None = None, pos: list[float] | None = None) -> dict:

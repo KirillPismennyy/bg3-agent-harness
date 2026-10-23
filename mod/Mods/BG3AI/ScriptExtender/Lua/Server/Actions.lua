@@ -99,9 +99,12 @@ A.PICKUP_REORDER_MS = 1500 -- pickup: an order gone from the task queue (nothing
 -- combat_turn (Toll the Dead, Ranged Attack extra attacks, Spiritual Weapon attacks), each read as a mystery.
 -- Say what a player would see at that moment: the target gone, no line of sight, or the projectile's blocked path.
 -- An Osiris cast skips its spell rolls unless CastRolls clears IgnoreSpellRolls on it (Server/CastRolls.lua).
-function A.arm_rolls(job, char, spell)
+function A.arm_rolls(job, char, spell, source, target)
     local CR = BG3AI.CastRolls
-    if CR and CR.arm then pcall(CR.arm, job, char, spell)
+    if source then
+        if not (CR and CR.arm) then G.refuse("experimental source route unavailable") end
+        return CR.arm(job, char, spell, source, target) -- failure must stop the order
+    elseif CR and CR.arm then pcall(CR.arm, job, char, spell)
     elseif job then job.rolls = { fix = "unavailable", why = "Server/CastRolls.lua is not loaded" } end
 end
 
@@ -2263,6 +2266,32 @@ reg("cast", function(args)
     -- with an upcast, slots are checked at the upcast level (not the base
     -- level, which may be spent).
     local spell = resolve_spell(base, upcast)
+    local selected_source
+    local legacy_source
+    if args.source ~= nil then
+        if ui or args.upcast or args.which or pos or landing or #targets ~= 1 then
+            G.refuse("experimental source route supports one entity target without UI, variants or upcast")
+        end
+        local CR = BG3AI.CastRolls
+        if not (CR and CR.validate_source) then G.refuse("experimental source route unavailable") end
+        local okS, result = pcall(CR.validate_source, char, spell, args.source)
+        if not okS then G.refuse("experimental source refused: " .. tostring(result)) end
+        selected_source = result
+    elseif not ui then
+        local CR = BG3AI.CastRolls
+        if not (CR and CR.check_legacy_source) then G.refuse("source inspection unavailable") end
+        local okS, result = pcall(CR.check_legacy_source, char, spell)
+        if not okS then G.refuse("prototype-only cast refused: " .. tostring(result)) end
+        legacy_source = result
+    end
+    local function recheck_legacy_source()
+        if selected_source or ui then return end
+        local CR = BG3AI.CastRolls
+        if not (CR and CR.check_legacy_source) then G.refuse("source inspection unavailable") end
+        local okS, result = pcall(CR.check_legacy_source, char, spell)
+        if not okS then G.refuse("prototype-only cast refused: " .. tostring(result)) end
+        legacy_source = result
+    end
     local function prepare()
         local ok0, c = pcall(G.check_cast, char, base, targets[1], pos, upcast, args.force)
         if not ok0 then
@@ -2347,6 +2376,7 @@ reg("cast", function(args)
     if ui then no_start_ms = A.CAST_UI_NO_START_MS end
     local walk_m = walk and walk.plan.length_m or 0
     local function order(job)
+        recheck_legacy_source()
         job.osi_task = "spell"
         job.ordered_ms, job.ordered_pos = RPC.now_ms(), G.pos(char)
         if pos then
@@ -2357,11 +2387,11 @@ reg("cast", function(args)
             -- Engine form has 6 inputs (6th = WithoutMove), verified live
             -- on bg3le; the 5-input form is kept as a fallback for builds
             -- without it.
-            A.arm_rolls(job, char, spell)
+            A.arm_rolls(job, char, spell, selected_source, targets[1])
             G.osi_forms("UseSpellAtPosition", { char, spell, pos[1], pos[2], pos[3], without_move },
                 { char, spell, pos[1], pos[2], pos[3] })
         else
-            A.arm_rolls(job, char, spell)
+            A.arm_rolls(job, char, spell, selected_source, targets[1])
             G.osi("UseSpell", char, spell, targets[1], targets[2] or NULL_GUID, without_move)
             A.give_second_pick(job, char, spell, targets, landing)
         end
@@ -2561,7 +2591,8 @@ reg("cast", function(args)
                 end
                 local res = { cast = spell, extra_attack = check.extra_attack, walked_into_range = job.walked,
                     upcast_ignored = upcast_ignored, landed_m_from_target = landing, fell_m = job.fell_m,
-                    via = ui and "hotbar" or nil, targets_n = ui and #targets or nil, rolls = job.rolls }
+                    via = ui and "hotbar" or nil, targets_n = ui and #targets or nil, rolls = job.rolls,
+                    experimental_source = job.source_route, source_observation = legacy_source }
                 if #job.hits > 0 then
                     res.damage = job.hits
                     local total = 0
@@ -2612,9 +2643,10 @@ reg("cast", function(args)
                     end
                     check = c
                     j.walked = U.round(walk_m, 1)
+                    recheck_legacy_source()
                     j.osi_task = "spell"
                     j.ordered_ms, j.ordered_pos = RPC.now_ms(), G.pos(char)
-                    A.arm_rolls(j, char, spell)
+                    A.arm_rolls(j, char, spell, selected_source, targets[1])
                     G.osi("UseSpell", char, spell, targets[1], NULL_GUID, without_move)
                     A.give_second_pick(j, char, spell, targets, landing)
                 end)
