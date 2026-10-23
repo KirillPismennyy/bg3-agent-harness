@@ -1,0 +1,36 @@
+Independent implementation review ROUND 2 -- 2026-10-23
+Read-only; existing run016/regression/mutation evidence read, no tests run or files edited by reviewer.
+Snapshots: recorder39c3450163c295bb4646701e002779e42d173312e7fface268d200aa43e35a4e; reassembler4544afde6fa663d6440d1150f4f799182396eb0e0666f5fac93bdc47a03eb635; stamp9464ddfca01b860ec4f4e931fd5f8f34ba4f3ab6fc8a18f584062e05ca602bde.
+Disposition: IR06, IR11, new IR20 are P1 blockers; IR13 must also be corrected for validator acceptance. Original findings/severities remain in round1, none deleted.
+
+IR01 P1 RESOLVED: RESERVE_BYTES clamped MINIMAL_MAX=1600 (recorder239-248), guard411-416 bound Q_MAX_BYTES+RECORD_HARD_MAX; terminal errors fit reserve. Nested expansion regression/mutation exercise guard. Document actual bound/effective reserve, not Q alone.
+IR02 P1 RESOLVED: slots admission class, required terminal errors incomplete380-398; optional counted; both tested.
+IR03 P1 RESOLVED: bounded part window287-292/dropcounts; jobs coalesced/skipped1678-1705, tests/mutations. Parts on disk authoritative.
+IR04 P1 RESOLVED: dedicated Tick drain for inactive generation882-895; abandon check precedes retries608-615; transient/permanent failure regressions.
+IR05 P1 RESOLVED WITH LIMITS: content digest distinct exact artifact; runtime build claim unverified, unknown second source not activated; offline stamp edit detection. No runtime authenticity proof.
+IR06 P1 PARTIAL/BLOCKING: full GUID/no shared RNG fixed, but openPart454-465 exits suffix loop at k99 without checking c99 free. All candidates occupied => overwrite existing path. Refuse activation/write on namespace exhaustion. Regression prepopulates base+EVERY allowed suffix, asserts explicit failure and all hashes/bytes unchanged.
+IR07 P2 RESOLVED: budget stops traversal; engine Serialize optional/unbounded flagged1038-1103. Flat-table regression/mutation. Live latency remains unknown.
+IR08 P2 RESOLVED COVERAGE: instance ids, per-ID duration, source/cause unavailable and duplicate duration ambiguity stated1125-1149; duration/expiry tests.
+IR09 P1 RESOLVED: stalled accepted Defer retains slot2022-2035; never-run test asserts <=1 across intervals.
+IR10 P2 RESOLVED: movement anchor only after preserved1663-1674; dynamic base1396-1415 commit-gated; tests.
+IR11 P1 PARTIAL/BLOCKING: header consistency/filename checks149-158 good; record override unchecked. env.update(r)477-480 lets conflicting session/context/schema/generation replace checked envelope yet report complete. Required identity presence/types unchecked. Reject conflicting record envelope fields; validate header required identity presence/types with explicit allowed unknowns. Tests must keep correct trailers/checksums to isolate identity defects.
+IR12 P1 RESOLVED: order before sort, non-prep inversions invalid, exact final range165-257; older prep obs allowed.
+IR13 P2 PARTIAL/ACCEPTANCE GATE: kind=[] crashes at243-244, base_seq=[] at277, malformed actor lists/manifest parts unchecked. Validate ALL consumed nested shapes/types; structured incomplete not traceback. Add each regression.
+IR14 P1 RESOLVED: aliases/protected paths/output collisions/ordinary overwrite rejected, hardlinks samefile checked; unchanged-input regressions.
+IR15 P3 PARTIAL: per-stream limit/doc present, but main463-483 retains merged records/text for ALL streams even without --out; one-stream memory wording wrong. Legacy bypasses input limit. Clarify/enforce aggregate + legacy limit or stream outputs; do not claim bounded-memory.
+IR16-19 P2 PENDING benchmark revision currently in progress.
+
+IR20 P1 NEW/BLOCKING: reassemble269-283 accepts base if exists+same actor only. Allows self/future/cyclic delta ancestry => false complete, unreconstructable state. Require base_seq positive non-bool int < currentseq, same actor, chain rooted in valid full anchor. Reject full-plus-base contradictory sample/malformed base. Isolated tests: self, future, cycle, absent actor at base, valid multistep full-rooted chain. Preserve failed-anchor test.
+
+Memory claim caveat (no new ID): fixed-N event scaling can support bounded retained history for tested workload. names/stat prototype caches scale with U ever-seen identities/prototypes; broader bound must include U.
+
+Claude: This is a required second correction/verification round BEFORE final acceptance/commit. Preserve original report; add explicit dispositions and regression evidence for every residual/new issue. Parent will independently verify again. No game launch/deployment/simulator changes. All code remains exact Claude Opus5.5 authored.
+
+ROUND2 benchmark follow-up (independent, read-only; no rerun)
+Hashes: bench9136a66c303a6bea1f839440e8c9e1860c65f3db36414700c547a2673042d60f; full007resultsae6407efdd46f127479f180b9b78a1ed2ac402bc13ee7c202908623f35760de2; consolef7b64fcbccdf38ecb32b4bbd912a74661c23794814a6df4d9ce9667e400b8844.
+IR16 P2 RESOLVED in source/results: baseline/recorder/bench/mock/encoder/null/runner hashes+config overrides pinned. Generator recorder39c345... is HISTORICAL round2 revision, not later corrected production.
+IR17 P2 RESOLVED: medtrial stats distinct actual max(all); pertrialcounts retained; seven-sample UI reports p50/max/n, no tail-stability p99claim.
+IR18 P2 RESOLVED measurement/claims: no file-content/ioLog retention, preallocatedarrays/nullcontrols, labels sampledpeak/wholeharnessheap/GCstopalloc. Not isolated allocation or constantmemory proof across new U identities.
+IR19 P2 RESOLVED: end-to-end dispatch comparison separate identical preencodedline/timeline writeronly experiment. Writeronly timings are service/pump only, exclude admission/creation/encode. Old writer is documented reconstruction, NOT execution of baseline writer itself.
+No new consequential measurementfinding. PROSE DOC GATE STILL OPEN: reports/benchmark-2026-10-23.txt and README must identify full007 and exact generating historical revision before acceptance.
+Retain limitations: long-session/writeronly scaling one trial/size shows trend not distribution; v2 small-workload CPU/output costs; wholeharness+null not exact recorder accounting; hostdisk Pythonbridge/NTFS not SE; no live/frame/lossless/conformance proof. No need rerun solely to make old run look current: accurately pin and qualify generating revision and later corrections; if rerun, preserve prior evidence.

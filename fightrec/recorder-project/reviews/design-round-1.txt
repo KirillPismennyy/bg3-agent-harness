@@ -1,0 +1,12 @@
+Independent design review round 1 -- 2026-10-23
+Reviewer: independent Codex review agent design_review (no repository edits).
+All original findings retained below; historical review and failed verification preserved in reviews/legacy/.
+
+DR-01 P1 BLOCKING: baseline persistent FR.registered and retained state can leave stale callbacks or duplicates on hot replacement while metadata misidentifies source. Evidence baseline lines 332-333,723-724 and 246,679. Resolution: DESIGN section 9 generation ownership/refuse unsafe replacement and tests. Parent disposition resolved in prose, awaiting reviewer confirmation.
+DR-02 P1 BLOCKING: callback-entry seq reservation without terminal cleanup on copy/encode exception can block drain and exhaust bounded queue. Evidence DESIGN ordering/admission contract and baseline wrappers lines 291-306. Resolution: DESIGN section 9 exactly one terminal state, protected cleanup, bounded emergency accounting and fault tests. Parent disposition resolved in prose, awaiting reviewer confirmation.
+DR-03 P2: prep copied after metadata confuses observation order and storage sequence. Evidence baseline lines 268-275. Resolution: section 9 separate observation identity/time and per-combat storage seq; eviction and multiple-combat tests. Resolved in prose, implementation acceptance pending.
+DR-04 P2: active-prefix tight expression omitted k<=records-per-part assumption; seal cost can dominate. Resolution: section 5 now leads O(B+F(C+L)), F excludes seals, restricted equal-record derivation and Theta(B) seal term. Resolved in prose.
+DR-05 P3: moving main upstream signature URLs are not reproducible pins. Resolution: cached-v33 IO pinned to af85fd2bd2be28646539060d45df487f4d3314b9; other main references explicitly exploratory until Claude pins actual declarations. Partially resolved; optional-hook production enablement blocked until pin/compatibility evidence, no overall core implementation blocker.
+
+No finding deleted or severity retroactively reduced. Implementation/test verification is separate from prose disposition. Parent has not claimed live compatibility or conformance.
+Round 2 independent disposition: no blocking prose findings remain; core implementation may begin. DR-01/02/03/04 resolved in prose with implementation tests pending. DR-05 partially resolved; affected field/hook source pins and runtime compatibility remain enablement gates. No new findings. This approves readiness, not implementation correctness, performance or live compatibility.

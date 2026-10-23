@@ -1,0 +1,36 @@
+Live validation phase -- 2026-10-23 -- deployment completed; runtime/capture pending
+
+New user authorization supersedes earlier offline-only prohibition for this phase: back up installed FightRec.lua, deploy reviewed recorder, and guide exterior chapel recapture. Code fixes remain exclusively exact Claude Opus 5.5; Codex performs operations, analysis and review. No simulator change or game-settings edit requested.
+
+Repository source commit e3048f577deb706278511c81f2f1f7df133f39d3.
+Source content SHA256 5c3ddbf610cd4f3654b924e0dab1efa8422046321f1ef39fff1bc5d46c3635a9.
+Deployed stamped artifact SHA256 af9ec8d3d8f0a493a539bf79ed4e998d428304f99bb6ac925cb182cffafa7238.
+Installed path C:\Users\John\AppData\Local\Larian Studios\Baldur's Gate 3\Script Extender\FightRec.lua.
+Original backup C:\Users\John\AppData\Local\Larian Studios\Baldur's Gate 3\Script Extender\FightRec.original-20261023T121205Z-b74bcf2e.lua.bak.
+Original/backup SHA256 a8a72fa165dae06df499821e04c2fc8e3199cc8f1ab96a1fbfd587fb772af4a9.
+Second backup + staged artifact + full deployment receipt: work/live-validation/20261023T121205Z-b74bcf2e/ (ignored, no raw material committed).
+P01 PASS: existing complete suite rerun before deployment; all offline checks passed, log work/test-results/pre-live-deploy-001.txt.
+P02 PASS: stamped build verified before and after deployment; deployed artifact matches staged hash.
+P03 PASS: original installed file backed up twice and hash checked before replacement; old loaded Lua callbacks have NOT yet been reset by Codex.
+
+Game observed running: bg3_dx11 PID50088. User says they can reload pre-fight save. No UI/game action performed by Codex. Current loaded SE version unknown until new meta is read; cached version is not used as runtime proof.
+First pass uses reviewed defaults: movement/append/experimental functors/profile off. This establishes no performance acceptance; no live timing budget or frame-context targets have been agreed. P04 and timing tests remain UNTESTED.
+Runtime L01-L08, writer/coverage/recapture/stop checks remain PENDING. Existing FightRec/ logs and old saves untouched. New output expected under Script Extender/FightRec2/; raw intake belongs in ignored work/live-validation/.
+
+Console loading operational reference: pinned Norbyte bg3se Docs/API.md says reset reinitializes BOTH server/client Lua VMs, server/client select context. Pinned Utils.inl LoadString returns compiled function (nil,error on failure); IO.LoadFile reads user-profile folder. Use LoadString on LoadFile, not Ext.Require (mod-relative startup loader).
+https://github.com/Norbyte/bg3se/blob/af85fd2bd2be28646539060d45df487f4d3314b9/Docs/API.md
+https://github.com/Norbyte/bg3se/blob/af85fd2bd2be28646539060d45df487f4d3314b9/BG3Extender/Lua/Libs/Utils.inl
+
+Next gate: user reloads pre-fight save, resets Lua states, loads stamped file in server and client, then Codex reads new meta/hooks/diagnostics before the fight begins. Actual XYZ is checked from first-turn snapshot before accepting the recapture. No live compatibility claim from successful copying/compilation alone.
+
+LIVE STARTUP OBSERVATION -- both contexts loaded; no code changes
+Server session1792757830-c28a02f575fb40e0ddbb900ea4c80981; client1792757840-24c17ff3e12e491a13846e54ab40df70.
+L01 PASS for reported runtime version: both meta records report SE33 and game_raw v4.76.31.656. This is version reporting, not a loaded-DLL commit fingerprint.
+Identity PASS: both source_content_sha256 claims equal reviewed5c3ddbf610cd4f3654b924e0dab1efa8422046321f1ef39fff1bc5d46c3635a9; same default config fingerprint3136d792. External deployed artifact previously verified af9ec8d3...7238.
+L02 startup registrations PASS: every listed server hook registered=true (22 entries including Tick/GameStateChanged/damage events); client Tick registered=true. Successful registration does NOT establish event coverage.
+Capabilities: SaveFile/LoadFile/AppendFile present, collision_check=checked, GUID identity from GenerateGuid. SaveFile mode retained; append remains off. Client UI.Defer/GetRoot present.
+Client route PASS: locate generation1 found Data.CombatLog.EntryGroups via CombatLog panel, visited2035 nodes, initial entry count0. This establishes route discovery, not UI entry/dice coverage.
+No hook_error/terminal_error/capture_gap/ui_capture_unsupported/error/defer-error/stall records were present in inspected startup parts. No fight snapshot yet; XYZ/HP/resources/status instances remain pending first-turn inspection. Active parts lack final trailers normally; they are NOT evaluated as completed streams at this point.
+Timing observation: user console reported Dispatching user function call (?:2064) took12.62ms. The deployed source location is the client deferred UI callback. One sample only; initial route search visited2035 nodes. Do not attribute all duration specifically to traversal or equate callback time to a rendered frame hitch; no performance target/pass established.
+Observed startup prefixes copied without modifying originals to ignored work/live-validation/20261023T121205Z-b74bcf2e/startup-observation/ with hashes/observation manifest. They are live-prefix observations, not closed/final evidence.
+Next: user triggers the same exterior chapel opening, stops before first controllable combat action, allows several seconds of game ticks for flush and reports first-turn readiness. Codex checks actual start/turn XYZ and capture integrity before full fight. All coverage/timing/live-checklist cases not observed remain pending.

@@ -1,0 +1,14 @@
+Independent implementation review ROUND 3 -- focused source check, 2026-10-23
+Snapshots recorder512d459fc1fafba5cc960fc9790eb4669a92c5410a30daa8e8bede985a23ea80; reassembler30c5136ad2460e6366c522db82e03fbd68694644dff0ad7a8536bd74ffa8ba89.
+Reviewer read-only, no file edits. Attempted existing Python test execution failed access denied before any test; NO independently executed passes claimed. Parent will run full suite after final code freeze.
+
+IR06 P1: exhaustion now RESOLVED (newStream285-304 refuses all occupied candidates). Remaining same-ID NO-OVERWRITE GATE: namespace check only inspects p00001; orphan later parts without first marker may be reused/overwritten. Required correction: guard first creation of EVERY new part path, not only namespace marker; fail explicitly on any occupied target, leave prior bytes untouched. Add preexisting orphan p00002 with p00001 absent regression and verify every preexisting file unchanged. State single-writer/non-atomic external-race limitation honestly; no exclusive-create API assumed.
+IR11 P1 RESOLVED: required header identities typed, conflicting record envelopes rejected, export identity from checkedheader.
+IR13 P2: v2 guarded/structuredfailure RESOLVED, LEGACY RESIDUAL GATE: legacy_import496-497 iterates data.get('characters') or[] without listcheck. characters=1 parseable snapshot => TypeError directCLIpath. Validate legacy collection shape or wrap structuredfailure, add regression. Required intake behavior structured incomplete report, not traceback.
+IR15 P3 RESOLVED: streamingexport no aggregate mergedtext retention; largeststream+reports documented, legacy limit enforced.
+IR20 P1 RESOLVED: typed positive preceding sameactor bases, ancestry fullrooted, full+base conflicts/malformedactors/missingbases rejected; memoized longchains.
+Earlier resolved findings: no consequential regression found in focused source review. Benchmark finalsource/prose gate pending.
+
+Gate before acceptance: correct IR06 orphan nooverwrite and IR13 legacy shape; complete final PASS run. Keep run019 failed, all previous findings/dispositions and selected17mutation evidence. Mutation004 is not substitute for fullsuite. All code remains exactClaudeOpus5.5 authored; no deployment/game/simulator changes. Parent will independently rerun existing complete checks once Claude freezes source.
+
+Finalization sequence: finish these two acceptance corrections, freeze implementation source, run one complete final suite and only then bind final benchmark/report if production changes require it. Avoid further unrelated feature/polish iterations; optional follow-ups stay documented. Existing exact-hash historical benchmarks remain valid for their measured revision and must not be relabelled as current. Prose-only updates do not justify repeated full benchmark runs. Parent needs a frozen candidate for independent final verification and scoped commit.

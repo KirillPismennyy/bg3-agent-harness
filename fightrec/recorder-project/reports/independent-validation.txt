@@ -1,0 +1,189 @@
+== baseline sha256 a8a72fa165dae06df499821e04c2fc8e3199cc8f1ab96a1fbfd587fb772af4a9 OK
+
+== syntax: D:\MyCode\BG3 control bot\work\venv\Scripts\python.exe tools\lua54.py tests\check_syntax.lua
+ok   recorder/FightRec.lua
+ok   baseline/FightRec.lua
+ok   tests/mock_se.lua
+ok   tests/json.lua
+ok   tests/partreader.lua
+ok   tests/harness.lua
+ok   tests/test_recorder.lua
+ok   tests/test_stamped.lua
+ok   tests/check_syntax.lua
+ok   bench/bench.lua
+Lua 5.4 (lupa 2.8): 0 problem(s)
+== syntax exit 0
+
+== lua suite: D:\MyCode\BG3 control bot\work\venv\Scripts\python.exe tools\lua54.py tests\test_recorder.lua --dump D:\MyCode\BG3 control bot\work\test-out\lua
+ok   load server: activates, writes session stream, only FightRecV2 global      2.6 ms
+ok   same-second reloads get distinct session ids and file names                8.3 ms
+ok   same v2 executed twice: idempotent, no duplicate registration              4.4 ms
+ok   different v2 generation (config) is refused; old generation keeps running     4.4 ms
+ok   baseline then v2 in one Lua state: v2 refuses, baseline state untouched     2.6 ms
+ok   stopped generation: stale callbacks inert; reload still refused (no verified unsubscribe)     8.2 ms
+ok   XYZ: snapshot and checkpoints keep all three returns                       4.4 ms
+ok   XYZ: missing Y/Z is explicit unavailable, never zeros                      8.4 ms
+ok   XYZ: baseline defect reproduced under the same mock (X only)               2.2 ms
+ok   write false: not acknowledged, data retained, retried, recovered           7.7 ms
+ok   write throw: not acknowledged, data retained, retried, recovered           8.1 ms
+ok   write nil: not acknowledged, data retained, retried, recovered             7.6 ms
+ok   write partial_false: not acknowledged, data retained, retried, recovered     7.5 ms
+ok   write partial_throw: not acknowledged, data retained, retried, recovered     7.8 ms
+ok   write nil forever: never acknowledged, finishing stream abandoned after give-up     6.1 ms
+ok   repeated retries use bounded exponential backoff                           5.4 ms
+ok   many parts: sealed trailers, contiguous parts/seqs, tight cap boundary    17.1 ms
+ok   oversized record becomes a dedicated part, never truncated                13.8 ms
+ok   record above RECORD_HARD_MAX: explicit record_too_large terminal error at the same seq     6.0 ms
+ok   manifest write failure: stream still complete, parts authoritative, warning     5.7 ms
+ok   optional fnv1a32 part checksum is written in trailers                     13.8 ms
+ok   empty/end-only fight completes with explicit final part and manifest       8.0 ms
+ok   append requested without live verification stays on SaveFile               2.5 ms
+ok   append self-test failure falls back to SaveFile                            2.0 ms
+ok   append: only new bytes are appended after the first write                  7.2 ms
+ok   append false with nothing written: safe retry, no rotation, no duplicates     7.2 ms
+ok   append false after applying: recognised by read-back, no duplicate bytes     7.1 ms
+ok   append partial write: rotate to recovery part with duplicate uncertainty     9.5 ms
+ok   nested callback during a reservation keeps entry order; drain waits for the outer seq     6.2 ms
+ok   builder exception after a nested callback: same-seq terminal error, nested record kept     6.0 ms
+ok   encode exception: terminal error at the same seq, stream continues         6.6 ms
+ok   emergency: even the minimal terminal record fails -> failed latch, explicit seq gap     6.4 ms
+ok   nesting limit refuses deeper captures without reserving unbounded placeholders     6.2 ms
+ok   finalization cannot report complete with a pending reservation; timeout converts it     5.9 ms
+ok   queue saturation: bounded occupancy, explicit loss accounting, persistent gap after recovery    16.1 ms
+ok   degradation: optional capture suspended above high water, reported after     9.1 ms
+ok   prehistory: original obs/time kept, storage seq contiguous, count eviction reported     4.2 ms
+ok   prehistory: age eviction, two combats, reset identities                   10.7 ms
+ok   DealtDamage.Result copied inside the callback with provenance; no lifetime violations     5.9 ms
+ok   DealtDamage.Result missing/unavailable fields are recorded, not fatal      5.2 ms
+ok   BeforeDealDamage without Caster/Target is unattributed, never party-scoped     4.3 ms
+ok   missing optional hooks are durable records and do not prevent core capture     4.7 ms
+ok   hook callback errors are counted, bounded and recorded                     6.0 ms
+ok   mid-fight attach and overlapping party combats are explicit                5.0 ms
+ok   GameStateChanged is a lifecycle record plus best-effort flush              6.4 ms
+ok   experimental functor hooks only when explicitly enabled                    6.1 ms
+ok   checkpoints: event-adjacent turn boundary, deferred dirty, chunked reconcile, non-atomic labels     5.9 ms
+ok   delta checkpoints: only changed fields, base_seq chain, failed commit never becomes a base     9.2 ms
+ok   checkpoint with missing components records unavailable fields              5.2 ms
+ok   movement: off by default; when enabled threshold from last emitted sample, cumulative    12.8 ms
+ok   UI: at most one deferred poll queued; next scheduled after completion      2.4 ms
+ok   UI: Ext.UI.Defer missing -> unsupported, no direct UI access, server unaffected     2.5 ms
+ok   UI: Defer throwing -> backoff, defer_error records, unsupported after limit     2.3 ms
+ok   UI: accepted-never-run Defer keeps its single slot, never accumulates, recovers when run (IR-09)     2.5 ms
+ok   UI: backlog drains MAX_PER_POLL per completed poll; backlog exported       3.8 ms
+ok   UI: rebuilt log -> resync with new generation; duplicate fingerprints flagged ambiguous     4.5 ms
+ok   UI: vmdump budget cut marks entry incomplete                               3.1 ms
+ok   legacy boundary: same event names, legacy data fields preserved, prep shape mapped    17.8 ms
+ok   IR-01 retained queue bytes stay within Q_MAX_BYTES + RECORD_HARD_MAX; terminal records bounded    10.4 ms
+ok   IR-02 required terminal errors make capture incomplete; optional ones are counted, not hidden    11.9 ms
+ok   IR-03 tiny parts and fast producers: bounded part index and checkpoint jobs    55.5 ms
+ok   IR-04 stop during write backoff with an outstanding reservation keeps draining to completion     6.7 ms
+ok   IR-04 stop with writes failing forever ends in bounded explicit abandonment     5.5 ms
+ok   IR-05 distinct sources with unknown identity: second is not activated, recorded as unverified     4.1 ms
+ok   IR-06 no GUID, same clock, preexisting outputs: nothing overwritten        6.9 ms
+ok   IR-06 round 2: every candidate name taken -> explicit unwritable stream, all existing bytes unchanged     3.0 ms
+ok   IR-06 round 3: an orphan later part (p00002 without p00001) is never overwritten     3.9 ms
+ok   IR-07 reflection stops enumerating at the budget on a giant flat table    29.0 ms
+ok   IR-08 status instances, durations and duplicates are captured and diffed     5.4 ms
+ok   IR-10 a movement sample that was not committed does not advance the anchor     4.9 ms
+ok   baseline file bytes unchanged by any test                                  0.2 ms
+
+71 passed, 0 failed, 71 total
+== lua suite exit 0
+
+== reassembler/stamp tests: D:\MyCode\BG3 control bot\work\venv\Scripts\python.exe tests\test_reassemble.py
+test_checksum_detects_byte_change (__main__.CleanStreams.test_checksum_detects_byte_change) ... ok
+test_checksum_validated (__main__.CleanStreams.test_checksum_validated) ... ok
+test_end_only_complete (__main__.CleanStreams.test_end_only_complete) ... ok
+test_many_parts_complete (__main__.CleanStreams.test_many_parts_complete) ... ok
+test_oversized_part (__main__.CleanStreams.test_oversized_part) ... ok
+test_bad_manifest_not_trusted (__main__.Corruption.test_bad_manifest_not_trusted) ... ok
+test_conflicting_duplicate_rejected (__main__.Corruption.test_conflicting_duplicate_rejected) ... ok
+test_delta_base_missing_detected (__main__.Corruption.test_delta_base_missing_detected) ... ok
+test_identical_duplicate_reported (__main__.Corruption.test_identical_duplicate_reported) ... ok
+test_missing_manifest (__main__.Corruption.test_missing_manifest) ... ok
+test_missing_part (__main__.Corruption.test_missing_part) ... ok
+test_open_stream_without_final_trailer (__main__.Corruption.test_open_stream_without_final_trailer) ... ok
+test_reordered_parts (__main__.Corruption.test_reordered_parts) ... ok
+test_stale_manifest_mismatch_reported (__main__.Corruption.test_stale_manifest_mismatch_reported) ... ok
+test_trailer_count_mismatch (__main__.Corruption.test_trailer_count_mismatch) ... ok
+test_truncated_last_part (__main__.Corruption.test_truncated_last_part) ... ok
+test_append_recovery_duplicates (__main__.IntegrityStreams.test_append_recovery_duplicates) ... ok
+test_merged_output_has_envelope (__main__.IntegrityStreams.test_merged_output_has_envelope) ... ok
+test_saturation_reports_loss (__main__.IntegrityStreams.test_saturation_reports_loss) ... ok
+test_external_fight04_counts_read_only (__main__.Legacy.test_external_fight04_counts_read_only) ... ok
+test_legacy_import_preserves_ambiguity (__main__.Legacy.test_legacy_import_preserves_ambiguity) ... ok
+test_ir11_spliced_part_from_another_stream (__main__.ReviewRound1.test_ir11_spliced_part_from_another_stream) ... ok
+test_ir11_unsupported_schema (__main__.ReviewRound1.test_ir11_unsupported_schema) ... ok
+test_ir12_final_range_undershoot (__main__.ReviewRound1.test_ir12_final_range_undershoot) ... ok
+test_ir12_interior_swap_keeping_endpoints (__main__.ReviewRound1.test_ir12_interior_swap_keeping_endpoints) ... ok
+test_ir12_obs_inversion_outside_prehistory (__main__.ReviewRound1.test_ir12_obs_inversion_outside_prehistory) ... ok
+test_ir13_malformed_shapes_reported_not_raised (__main__.ReviewRound1.test_ir13_malformed_shapes_reported_not_raised) ... ok
+test_ir14_outputs_never_overwrite_inputs (__main__.ReviewRound1.test_ir14_outputs_never_overwrite_inputs) ... refusing to overwrite existing C:\Users\John\AppData\Local\Temp\fr2-0bmaook0\1792665024-5e5500010001400180010b66075b1eef-server-fight01-p00001.jsonl (use --overwrite)
+refusing to write C:\Users\John\AppData\Local\Temp\fr2-0bmaook0\1792665024-5e5500010001400180010b66075b1eef-server-fight01-p00001.jsonl: it is an input or protected file (C:\Users\John\AppData\Local\Temp\fr2-0bmaook0\1792665024-5e5500010001400180010b66075b1eef-server-fight01-p00001.jsonl)
+output paths collide: C:\Users\John\AppData\Local\Temp\fr2-0bmaook0\x.json
+refusing to write D:\MyCode\BG3 control bot\baseline\FightRec.lua: it is an input or protected file (D:\MyCode\BG3 control bot\baseline\FightRec.lua)
+refusing to write C:\Users\John\AppData\Local\Temp\fr2-leg-kpexe3op\legacy.jsonl: it is an input or protected file (C:\Users\John\AppData\Local\Temp\fr2-leg-kpexe3op\legacy.jsonl)
+refusing to overwrite existing C:\Users\John\AppData\Local\Temp\fr2-0bmaook0\existing-report.json (use --overwrite)
+refusing to write C:\Users\John\AppData\Local\Temp\fr2-0bmaook0\hardlink.json: it is an input or protected file (C:\Users\John\AppData\Local\Temp\fr2-0bmaook0\1792665024-5e5500010001400180010b66075b1eef-server-fight01-p00001.jsonl)
+ok
+test_ir15_input_limit_reported (__main__.ReviewRound1.test_ir15_input_limit_reported) ... ok
+test_ir11_header_identity_types (__main__.ReviewRound2.test_ir11_header_identity_types) ... ok
+test_ir11_record_cannot_override_envelope (__main__.ReviewRound2.test_ir11_record_cannot_override_envelope) ... ok
+test_ir13_nested_shapes_never_raise (__main__.ReviewRound2.test_ir13_nested_shapes_never_raise) ... ok
+test_ir13_round3_legacy_non_list_characters (__main__.ReviewRound2.test_ir13_round3_legacy_non_list_characters) ... ok
+test_ir15_legacy_input_limit_and_streamed_output (__main__.ReviewRound2.test_ir15_legacy_input_limit_and_streamed_output) ... ok
+test_ir20_actor_absent_at_base (__main__.ReviewRound2.test_ir20_actor_absent_at_base) ... ok
+test_ir20_cycle (__main__.ReviewRound2.test_ir20_cycle) ... ok
+test_ir20_full_sample_with_base_is_contradictory (__main__.ReviewRound2.test_ir20_full_sample_with_base_is_contradictory) ... ok
+test_ir20_future_reference (__main__.ReviewRound2.test_ir20_future_reference) ... ok
+test_ir20_self_reference (__main__.ReviewRound2.test_ir20_self_reference) ... ok
+test_ir20_unrooted_chain (__main__.ReviewRound2.test_ir20_unrooted_chain) ... ok
+test_ir20_valid_multistep_chain (__main__.ReviewRound2.test_ir20_valid_multistep_chain) ... ok
+test_edit_after_stamp_detected (__main__.StampTool.test_edit_after_stamp_detected) ... ok
+test_refuses_protected_and_existing_outputs (__main__.StampTool.test_refuses_protected_and_existing_outputs) ... ok
+test_stamp_and_verify (__main__.StampTool.test_stamp_and_verify) ... ok
+
+----------------------------------------------------------------------
+Ran 44 tests in 1.754s
+
+OK
+== reassembler/stamp tests exit 0
+
+== stamp build: D:\MyCode\BG3 control bot\work\venv\Scripts\python.exe tools\stamp_build.py D:\MyCode\BG3 control bot\work\build\FightRec.lua --overwrite
+content_sha256 5c3ddbf610cd4f3654b924e0dab1efa8422046321f1ef39fff1bc5d46c3635a9
+artifact_sha256 af9ec8d3d8f0a493a539bf79ed4e998d428304f99bb6ac925cb182cffafa7238
+== stamp build exit 0
+
+== stamp verify: D:\MyCode\BG3 control bot\work\venv\Scripts\python.exe tools\stamp_build.py --verify D:\MyCode\BG3 control bot\work\build\FightRec.lua
+content_sha256 5c3ddbf610cd4f3654b924e0dab1efa8422046321f1ef39fff1bc5d46c3635a9
+artifact_sha256 af9ec8d3d8f0a493a539bf79ed4e998d428304f99bb6ac925cb182cffafa7238
+== stamp verify exit 0
+
+== stamped artifact loads: D:\MyCode\BG3 control bot\work\venv\Scripts\python.exe tools\lua54.py tests\test_stamped.lua D:\MyCode\BG3 control bot\work\build\FightRec.lua
+ok   stamped artifact claims content sha256 5c3ddbf610cd4f3654b924e0dab1efa8422046321f1ef39fff1bc5d46c3635a9; same-build re-execution idempotent; unstamped replacement refused
+== stamped artifact loads exit 0
+
+== mutation check: D:\MyCode\BG3 control bot\work\venv\Scripts\python.exe tests\mutation_check.py
+ok     IR-01        mutant: 0 passed, 1 failed, 1 total        original: 1 passed, 0 failed, 1 total
+ok     IR-02        mutant: 0 passed, 1 failed, 1 total        original: 1 passed, 0 failed, 1 total
+ok     IR-03 index  mutant: 0 passed, 1 failed, 1 total        original: 1 passed, 0 failed, 1 total
+ok     IR-03 jobs   mutant: 0 passed, 1 failed, 1 total        original: 1 passed, 0 failed, 1 total
+ok     IR-04        mutant: 0 passed, 1 failed, 1 total        original: 1 passed, 0 failed, 1 total
+ok     IR-06        mutant: 1 passed, 2 failed, 3 total        original: 3 passed, 0 failed, 3 total
+ok     IR-06 r2     mutant: 0 passed, 1 failed, 1 total        original: 1 passed, 0 failed, 1 total
+ok     IR-06 r3     mutant: 0 passed, 1 failed, 1 total        original: 1 passed, 0 failed, 1 total
+ok     IR-07        mutant: 0 passed, 1 failed, 1 total        original: 1 passed, 0 failed, 1 total
+ok     IR-09        mutant: 0 passed, 1 failed, 1 total        original: 1 passed, 0 failed, 1 total
+ok     IR-10        mutant: 0 passed, 1 failed, 1 total        original: 1 passed, 0 failed, 1 total
+ok     IR-11 override mutant: Ran 1 test in 0.030s FAILED (failures=1) original: Ran 1 test in 0.035s OK
+ok     IR-11 types    mutant: Ran 1 test in 0.044s FAILED (failures=1) original: Ran 1 test in 0.144s OK
+ok     IR-12 order    mutant: Ran 1 test in 0.044s FAILED (failures=1) original: Ran 1 test in 0.039s OK
+ok     IR-12 range    mutant: Ran 1 test in 0.039s FAILED (failures=1) original: Ran 1 test in 0.038s OK
+ok     IR-14 alias    mutant: Ran 1 test in 0.042s FAILED (failures=1) original: Ran 1 test in 0.033s OK
+ok     IR-13 legacy   mutant: Ran 1 test in 0.006s FAILED (errors=1) original: Ran 1 test in 0.007s OK
+ok     IR-20 bases    mutant: Ran 3 tests in 0.063s FAILED (failures=3) original: Ran 3 tests in 0.062s OK
+ok     IR-20 rooting  mutant: Ran 2 tests in 0.040s FAILED (failures=2) original: Ran 2 tests in 0.040s OK
+ALL MUTANTS DETECTED
+== mutation check exit 0
+
+ALL OFFLINE CHECKS PASSED

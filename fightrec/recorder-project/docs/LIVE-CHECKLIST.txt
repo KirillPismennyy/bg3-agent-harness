@@ -1,0 +1,63 @@
+Manual live acceptance checklist for recorder/FightRec.lua v2 -- NOT RUN (no launch/deployment authorized)
+
+Nothing below has been executed. Live compatibility, performance and coverage are pending until each item is
+run with explicit user approval for deployment and game launch. Record actual results next to each item.
+
+Preparation (offline)
+P-01 python tests/run_all.py passes on the exact commit to deploy.
+P-02 python tools/stamp_build.py <out>\FightRec.lua ; record BOTH printed hashes (content_sha256 is what the
+     recorder reports as a claim; artifact_sha256 must equal the sha256 of the file actually deployed);
+     tools/stamp_build.py --verify <deployed file> before loading.
+P-03 Back up the installed baseline (sha256 a8a72fa1...af4a9) and keep it; never load both in one Lua state
+     (v2 refuses activation when the baseline's FightRec.registered is set).
+P-04 Agree and write down live performance targets with hardware/frame context BEFORE measuring (none exist;
+     the reported 35--186 ms hitches are observations, not a budget).
+
+Load and identity (server and client consoles)
+L-01 Loaded SE version: record Ext.Utils.Version() and the game version; compare with the af85fd2 pin.
+L-02 Session meta/hooks records: every hook registered=true (missing ones explicit); source_sha256 equals P-02.
+L-03 XYZ: start a small fight; snapshot and turn checkpoints show pos.valid=true with three distinct numbers
+     matching the in-game position; no X-only rows.
+L-04 Re-run the same file from the console: reexecuted_same_generation recorded, no duplicate records per event.
+L-05 Run a differently configured copy: replacement_refused, old generation keeps recording.
+L-06 Reset/reload: new session_id; previous unfinished streams read as incomplete (no final trailer).
+L-07 Collision probe: Ext.IO.LoadFile on a not-yet-existing part returns nil without errors/console spam;
+     session meta shows collision_check "checked". Status instances: HandleToInteger yields stable integers
+     across checkpoints for an unchanged status (otherwise every delta reports status changes).
+L-08 FightRecV2.stop() during a fight: stream completes (final trailer) and the session stream finishes.
+L-09 (LV01) Party status state: run tools/probes/lv01_status_probe_v2.lua once (v1 route refuted live) (server console, read-only) while party
+     statuses are unavailable (dev.1: nil StatusContainer error; dev.2: component_absent); keep the printed lines and saved JSON. Pass only if
+     route_validated=true and every absent actor reads ABSENT_AND_NO_STATUS_ENTITIES; then also re-probe after a
+     status is applied to a party member (C-06) to see whether the component appears. Until then absent = unknown.
+
+Writer
+W-01 Parts appear under FightRec2/, roll over near PART_TARGET_BYTES, sealed parts have trailers.
+W-02 tools/reassemble.py on a copy of FightRec2/ reports the fight complete after normal combat end.
+W-03 Scratch-only append verification (isolated folder): WRITE_MODE="append" + APPEND_SEMANTICS_VERIFIED=true;
+     appendprobe passes; parts identical in content to SaveFile mode for the same fight type. Only then may
+     append be considered for regular use.
+W-04 Induced write failure if a safe method exists (e.g. read-only scratch file): failure warning, retained
+     data, write_recovered after recovery. Otherwise mark untested.
+
+Coverage (each: visible checklist vs server stream vs UI log, with gaps written down)
+C-01 hit, miss, critical hit; C-02 saving throw success and failure; C-03 AOE with several targets;
+C-04 multi-hit spell; C-05 reaction/opportunity attack; C-06 status application, expiry, removal;
+C-07 resource spend and refill; C-08 simultaneous/nested effects (check seq/obs order); C-09 death/downed;
+C-10 movement on/off comparison (MOVEMENT_ENABLED) for cost; C-11 UI log rebuild/reload: resync/route_lost,
+     generation increments, single deferred poll; C-12 mid-fight script load (start_mode mid_fight_attach);
+C-13 two overlapping combats (scope_transition). Expect: miss/save outcomes may be absent from damage hooks;
+     record absence, do not infer. Experimental functor hooks stay off unless separately approved.
+
+Timing
+T-01 Comparable trials: recorder off / v2_lean / v2_default / v2_full (and baseline if desired) with frame-time
+     capture; PROFILE=true gives per-kind callback time (MicrosecTime). Report p50/p95/p99/max with sample counts.
+T-03 File-system stalls: the offline host-disk variant showed unexplained single-tick maxima up to 571 ms for v2
+     (which creates a new file per ~256 KiB part and probes each new part path) and up to 101 ms for the baseline.
+     Measure tick/frame time around part seals and new-part creation in the game's data folder (with the usual
+     antivirus/indexing configuration) before relying on defaults; PART_TARGET_BYTES trades file count for
+     rewrite size.
+T-02 Representative chapel fight under the recorded custom Honour configuration; stealth dependencies remain
+     an explicit unsupported boundary.
+
+Exit: list every item as pass/fail/untested with evidence paths outside Git; no item may be inferred from the
+offline benchmark (host Lua + mocks).

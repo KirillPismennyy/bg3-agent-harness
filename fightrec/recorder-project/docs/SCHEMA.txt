@@ -1,0 +1,135 @@
+FightRec capture schema version 2 (recorder/FightRec.lua 2.0.0-dev.1) -- 2026-10-23
+
+Files (Script Extender user-profile data folder; namespace separate from the baseline's FightRec/)
+  FightRec2/<session>-<context>-<stream>[-cN]-p<NNNNN>.jsonl   numbered parts, 1-based, contiguous
+  FightRec2/<session>-<context>-<stream>[-cN]-manifest.json    written once at normal completion (convenience only)
+  FightRec2/<session>-<context>-appendprobe.txt                only when append mode was requested and self-tested
+  <session> = <ClockEpoch seconds>-<32 hex of Ext.Utils.GenerateGuid> (fallback: f<monotonic ms hex><table address>;
+              then "-2".."-9" if an earlier session's first part exists; activation refused when neither a GUID
+              nor a working LoadFile can rule out a collision)
+  <context> = server | client ; <stream> = session | fightNN (server) | session | combatlog (client)
+  -cN (N=2..9) only when that stream's first part path already existed; if all are taken the stream writes
+  nothing and refuses observations (counted as loss, console warning). Every later part path is probed too: an
+  existing file there (e.g. an orphan from an earlier session) is never overwritten -- the stream is abandoned
+  explicitly (capture "failed", warning). Single writer, check-then-write; not an exclusive create.
+
+Part layout: line 1 header, then records, then (when sealed) one trailer. Every line ends with LF.
+  header  {"kind":"part_header", schema_version (2), recorder_version, source_content_sha256 (64 hex claimed by a
+           build stamp, or "unknown"), generation, session_id, context, stream_id, part, first_seq, write_mode,
+           created_t, clock{unit,domain,wall_clock_sync}, combat_id?, fight?, file_prefix_suffix?, oversized?,
+           record_bytes?, recovery_of?, duplicate_uncertain?}
+  trailer {"kind":"part_trailer", part, first_seq, last_seq, count, record_bytes (sum of record line bytes incl.
+           LF), final, checksum?{alg:"fnv1a32", value, over}; when final: end_reason, capture, stream_last_seq,
+           counters}
+  A part without trailer is the active (rewritable/appendable) part, or a part abandoned after an ambiguous
+  append (then the next part's header has recovery_of). A torn last line is incomplete evidence.
+  The full envelope of a record is header identity + record fields; records never carry identity fields
+  (tools/reassemble.py --out merges them, taking identity only from the checked header).
+  manifest {kind:"manifest", schema_version, recorder_version, source_content_sha256, session_id, context,
+           stream_id, generation, state, capture, end_reason, last_seq, parts (last <= PARTS_INDEX_MAX summaries),
+           parts_total, parts_index_dropped, counters, written_t, note}
+
+Record envelope
+  seq     per-stream storage sequence, contiguous from 1; reserved at admission, before the record's data is built,
+          so nested callbacks cannot invert it. Every admitted seq ends exactly once as its record or as a
+          terminal_error at the same seq.
+  obs     per-context (Lua state) observation id assigned at callback entry, including outside combat. Distinct
+          from seq: prehistory copies keep their original obs; obs restarts in a new Lua state (new session_id).
+          Outside prehistory, obs increases with seq.
+  t       callback-entry time, ms, Ext.Timer.MonotonicTime (steady clock). Never compared across contexts.
+  kind    legacy observation names are kept verbatim: TurnStarted, TurnEnded, UsingSpellOnTarget, CastedSpell,
+          AttackedBy, RollResult, StatusApplied, StatusRemoved, HitpointsChanged, DownedChanged, Died, Equipped,
+          Unequipped, UseFinished, CombatRoundStarted, BeforeDealDamage, DealDamage, DealtDamage, meta, snapshot,
+          end; client: entry, resync, route_lost, locate, error.
+          New: checkpoint, movement, prehistory_window, stream_stats, capture_gap, write_recovered, degradation,
+          scope_transition, terminal_error, defer_stall, defer_stalled, defer_recovered, defer_error; lifecycle
+          (session stream): meta, hooks, reexecuted_same_generation, reexecution_unverified,
+          replacement_refused, hook_error, game_state_changed, generation_stopped, ui_capture_unsupported;
+          ExecuteFunctor/AfterExecuteFunctor only with EXPERIMENTAL_FUNCTORS.
+  phase   raw phase: "after" (Osiris after-listener), "ext_event", "ext_event_experimental", "recorder", "ui",
+          or the checkpoint/snapshot reason.
+  data    observation payload; legacy field names kept (char, caster, target, spell, type, element, status,
+          source, round, damage_type, amount, cause, event, roller, subject, result, active, critical, pct,
+          downed, item, success, name, turns). who-fields are {uuid, name} or a raw string when not a UUID.
+  flags   prehistory=true (+ st = storage time) for copies of out-of-combat observations; prehistory_late when a
+          fight started while the observation was built; late_after_end for seq after the end record; err.
+
+Observation details
+  meta (fight): schema/recorder version, source_content_sha256, source_identity{content_sha256, status
+    (claimed_by_build_stamp_unverified_at_runtime|unknown), artifact_sha256 note}, session/generation/stream,
+    combat_id, how, start_mode (normal|mid_fight_attach), clock, versions{game_raw, se_raw, se_status},
+    capabilities (declaration pin, I/O functions present, write mode and reason), hooks{registered, error},
+    config, config_unknown_keys, level, unknowns[].
+  DealDamage/DealtDamage data: caster, target, attribution ("Caster/Target"|"unattributed"), scope
+    ("party"|"fight"|"unattributed_global"), spell, story_action_id, originator, hit and attack (bounded
+    reflection: {value, cut?, depth_cut?, serialize_unbudgeted?} when cut; _omitted marks a stopped enumeration;
+    since 2.0.0-dev.3 Lua sequences are JSON lists, e.g. hit.ConditionRolls[i].Roll{Roll{Roll{DiceValue,
+    DiceAdditionalValue,AmountOfDices},Advantage,Disadvantage},Result{Total,NaturalRoll,DiscardedDiceTotal,
+    RollsCount[{RollValue,RerollType}]},Metadata{...}}, Damage.DamageRolls{<type>:[...]}, DamageList[...],
+    ImpactPosition[x,y,z] (historical/baseline shape); a cut inside a list ends with "<omitted>". dev.1/dev.2 wrote
+    such lists as {"1":...,"2":...} objects (LV02): readers must accept both),
+    shape (first event of each kind per load). DealtDamage adds result: {provenance, Hit{pinned scalars,
+    ConditionRolls[<=8]{RollType, Difficulty, Ability, Skill, SwappedSourceAndTarget, RollUuid}},
+    Attack{TotalDamageDone, TotalHealDone, DamageList[<=16]{amount,type}}, NumConditionRolls,
+    Results{functorId:int}, missing{field:error}?}.
+  BeforeDealDamage: the pinned declaration has no Caster/Target; attributed only via Hit.Inflicter, otherwise
+    scope "unattributed_global" and recorded only during an active fight (never as party prehistory).
+    story_action_id is a native id; obs is NOT a native action id.
+  snapshot (start/end): {why, characters[{uuid, name, party, st, pos, hostile_to_party, ac, Health, EocLevel,
+    Classes, Stats, ActionResources, Experience, Resistances, SpellBookPrepares (dump: {truncated,bytes,json}
+    when > DUMP_MAX, {unavailable,error} on failure), statuses[{id, instance, turns, name}] | {unavailable,
+    component_absent?}, statuses_error? (same text as unavailable; kept for older readers),
+    equipment[{slot,uuid,name,stats}]}], begin_t, end_t, atomic=false, timing}.
+    (2.0.0-dev.1 wrote statuses=[] beside statuses_error when unreadable: treat that [] as UNKNOWN, not empty.)
+  pos: {x, y, z, valid=true, src="Osi.GetPosition", domain="world", st?} or {valid=false, src, reason}.
+    Missing coordinates are never zeros.
+  checkpoint: {why (turn_boundary|action|dirty|reconcile), timing (event_adjacent|deferred), atomic=false,
+    begin_t, end_t, seq_watermark_begin/end, status_fields, actors[...]; deferred chunks add group, from_index,
+    total, last_chunk, marked_since_t, merged?}. Actor sample: full anchor {uuid, st, full=true, pos,
+    hp{hp,max,temp,temp_max} | {unavailable}, statuses[{id, instance, turns}] | {unavailable, component_absent?},
+    resources[{id, level,amount,max}] (sorted, <=64, resources_cut), entity="unavailable"?} or delta {uuid, st, base_seq,
+    <only changed fields>}: an omitted field means unchanged since the sample of this actor in record base_seq;
+    {removed=true} means it disappeared. Bases are earlier seqs; every chain ends at a full anchor; a sample
+    becomes a base only when its record committed. turn_boundary samples are always full anchors.
+    status instance = Ext.Utils.HandleToInteger(status entity); turns per status id (duplicate instances of one
+    id share it); status source/cause not captured. "deferred" is NOT the precise action boundary.
+  statuses semantics (LV01): a list (possibly []) is read from a PRESENT StatusContainer component.
+    component_absent=true means e.StatusContainer read nil, i.e. the entity lacked the raw
+    eoc::status::ContainerComponent (pinned LuaEntityProxy.inl Index); it is UNKNOWN status state, never
+    "no statuses", until live evidence (tools/probes/lv01_status_probe_v2.lua) establishes otherwise. Other
+    {unavailable} values are read errors.
+  movement (MOVEMENT_ENABLED only): {samples[{uuid,pos,dist,since_t}], suppressed_below_threshold, threshold_m,
+    interval_ms, note}. dist is from the last EMITTED (committed) sample. No path, velocity, teleport, LOS claim.
+  capture_gap: {required, optional, first_t/last_t, first_obs/last_obs, by_kind (<=24 kinds + other),
+    reasons{queue_full|nesting_limit|stream_unwritable:n}}. Lost observations never get a seq.
+  terminal_error: {what (builder_error|encode_error|commit_error|queue_bytes_exceeded|reservation_abandoned),
+    for_kind, class (required|optional), error}; at most 1600 bytes. A required one makes capture incomplete.
+    record_too_large (> RECORD_HARD_MAX) is an encode_error.
+  prehistory_window: {kept, keep_max, window_ms, evicted{count, reasons{count|age:n}, first/last obs/t}, oldest_obs}.
+  stream_stats (fight): counters, degraded_intervals, checkpoint_jobs{dirty_coalesced, reconcile_skipped,
+    max_jobs}, movement_not_emitted, parts_index_dropped, profile? (PROFILE=true).
+  entry (client, auxiliary): {i, collection, entry (bounded view-model dump; since dev.3 an ls.VMDiceTypeSet at the
+    depth limit keeps its scalar properties instead of _cut, LV02), generation, backlog, complete,
+    items_omitted?, fingerprint_repeat?}; resync: {count, from, generation, rebuilt?, fingerprint_matches,
+    ambiguous_duplicate?}. UI text is never used to deduplicate server events.
+
+Bounds (offline-tested; not frame-time guarantees)
+  retained queue bytes <= Q_MAX_BYTES + RECORD_HARD_MAX (reservation = max(RESERVE_BYTES, 1600)); active part
+  <= PART_TARGET_BYTES + one record; part index <= PARTS_INDEX_MAX; checkpoint jobs <= 2 with <= participants
+  each; actor caches O(N*S); name/stat caches O(distinct identities/prototypes ever seen).
+
+Completeness rules for readers (implemented by tools/reassemble.py)
+  A stream is complete only if: schema 2 with required, well-typed header identity (allowed unknowns: source
+  "unknown"; combat_id/fight absent on non-fight streams), identical across parts and matching the file names;
+  no record overrides an envelope identity field; parts 1..n present and correctly numbered; storage order
+  increasing within and across parts (recovery parts excepted); every non-final part sealed (or recovered); the
+  last part has a final trailer with capture "ok"; seqs 1..stream_last_seq exactly, contiguous, no conflicting
+  duplicates; no capture_gap or terminal_error records; obs increasing outside prehistory; every delta chain
+  rooted in a full anchor; all nested shapes well formed. Identical duplicates (append recovery) are reported and
+  kept once; conflicting duplicates are rejected and become gaps. A missing or stale manifest never overrides the
+  parts. Session streams have no final trailer unless FightRecV2.stop() ran; client combatlog streams likewise.
+
+Legacy (schema 1, baseline FightRec.lua): no seq/obs; prep records wrap {kind, data}; pos arrays are X-only in the
+retained capture. tools/reassemble.py --legacy normalizes to storage_index order, unwraps prep with prehistory=true
+and marks positions {x, y:null, z:null, valid:false, legacy_xyz_ambiguous:true}; it never reports a legacy file
+complete.

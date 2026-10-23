@@ -1,0 +1,282 @@
+{
+  "version": "2.0.0-dev.3",
+  "source_commit": "35ee5e66b44ec989776fe65820f6161cf63a5055",
+  "installed_artifact_sha256": "34a533de7acc38d1f72c4ab14d3da8768799cb8b69db975cfc098a040343ed87",
+  "files": [
+    {
+      "path": "FightRec.lua",
+      "sha256": "34a533de7acc38d1f72c4ab14d3da8768799cb8b69db975cfc098a040343ed87",
+      "bytes": 99693
+    },
+    {
+      "path": "recorder-project/.gitattributes",
+      "sha256": "65198a7852e7bb1a5e76206fb2e6b06cde12ef653559a2fccc95b774807e702e",
+      "bytes": 85
+    },
+    {
+      "path": "recorder-project/.gitignore",
+      "sha256": "08f06fe80cf74986a6c40417de4775cbaf39d4b08bc0ce19e2224159ac07a375",
+      "bytes": 178
+    },
+    {
+      "path": "recorder-project/README.txt",
+      "sha256": "cde559595548fcc7491e3f748a5247db720468a22a459422050a08f72499c7f8",
+      "bytes": 10605
+    },
+    {
+      "path": "recorder-project/baseline/FightRec.lua",
+      "sha256": "a8a72fa165dae06df499821e04c2fc8e3199cc8f1ab96a1fbfd587fb772af4a9",
+      "bytes": 33039
+    },
+    {
+      "path": "recorder-project/bench/bench.lua",
+      "sha256": "9136a66c303a6bea1f839440e8c9e1860c65f3db36414700c547a2673042d60f",
+      "bytes": 27155
+    },
+    {
+      "path": "recorder-project/bench/null_recorder.lua",
+      "sha256": "54f383bb6b25a6eccf5655b7b66baf5ce674321887476ff34381df810a504120",
+      "bytes": 953
+    },
+    {
+      "path": "recorder-project/bench/summarize.py",
+      "sha256": "16bbdfb15f356882c6e50de68c3360e85963a0f5ca9f8c4bf632bd987322d787",
+      "bytes": 3710
+    },
+    {
+      "path": "recorder-project/docs/API-PINS.txt",
+      "sha256": "f8d0f00e71c67be3e7bd96f607cb5289d56cf63a3a09ff02e64a0914c2a9bf8b",
+      "bytes": 10099
+    },
+    {
+      "path": "recorder-project/docs/DESIGN.txt",
+      "sha256": "e3502499346038e2b4c42f3e2d280a693429d4face304e283d92b76c9a8c3559",
+      "bytes": 24959
+    },
+    {
+      "path": "recorder-project/docs/HANDOFF.txt",
+      "sha256": "b612c41566d7d1334ddc95feb753936c1c98ed62e0035e619aa4c809f02a74c5",
+      "bytes": 2935
+    },
+    {
+      "path": "recorder-project/docs/LIVE-CHECKLIST.txt",
+      "sha256": "613867b392cac773b88b4c814bf9a9862f309ba576eb73cf8ff012d866dd4347",
+      "bytes": 5238
+    },
+    {
+      "path": "recorder-project/docs/PROVENANCE.txt",
+      "sha256": "b37ac5f211bbdcc2e8e2488c20163a11d4b692984a758e1385cbf127709c164e",
+      "bytes": 4402
+    },
+    {
+      "path": "recorder-project/docs/SCHEMA.txt",
+      "sha256": "b593d21d86b6ac0840146c723cc2c3880ed55b91a053918d989568ab2822d6e7",
+      "bytes": 12492
+    },
+    {
+      "path": "recorder-project/recorder/FightRec.lua",
+      "sha256": "8ec6f5c36bc6d3b468a444e0a83069985b9eb7262be165aa0da6ea09460e6e3e",
+      "bytes": 99630
+    },
+    {
+      "path": "recorder-project/reports/benchmark-2026-10-23.txt",
+      "sha256": "4d8c282922ac202f7b792c38287a804eb042bae94f2802a886f98517b620c7d6",
+      "bytes": 18161
+    },
+    {
+      "path": "recorder-project/reports/benchmark-full-010.json",
+      "sha256": "24bc21b04d6df7eabe41cdedee9b310eff6ff500ab2e8b34c801541ec908408e",
+      "bytes": 192314
+    },
+    {
+      "path": "recorder-project/reports/dev3-runtime-activation-2026-10-23.txt",
+      "sha256": "8bc86f19f87cdbd992868a675d44780660197614da10703e0e5dfde9d0452cb4",
+      "bytes": 2618
+    },
+    {
+      "path": "recorder-project/reports/implementation-round-1.txt",
+      "sha256": "4e64057a70b22fd5fe6ea708da4d4d83ec73958c90b9228c47ae8c1d486bdf9d",
+      "bytes": 10794
+    },
+    {
+      "path": "recorder-project/reports/independent-live-fix-review-2026-10-23.txt",
+      "sha256": "00032cc20c1820781e90dffd8d27b4562a94f0b104285baa6949c4cac556175b",
+      "bytes": 2516
+    },
+    {
+      "path": "recorder-project/reports/independent-validation.txt",
+      "sha256": "104e7f647423e577ae99345c5624aaa901d19de05d0bc2262cb70411f3163113",
+      "bytes": 16373
+    },
+    {
+      "path": "recorder-project/reports/live-capture-finalization-and-dev3-deployment-2026-10-23.txt",
+      "sha256": "54759fe22fcc6b4700f6278b35ebd2196c704bb7e0328c813c3acd248ded560f",
+      "bytes": 3922
+    },
+    {
+      "path": "recorder-project/reports/live-checklist-results-2026-10-23.txt",
+      "sha256": "fe79d6aa69e26cbfd2a323f7044dd5d8a4e6f0bead640ceb5dc3d3381be6e35a",
+      "bytes": 2469
+    },
+    {
+      "path": "recorder-project/reports/live-combat-ended-inspection-2026-10-23.txt",
+      "sha256": "09392889de4ced80ccba5ce956ed2374cb10cd30c1409f77b98787b3a36a8ea4",
+      "bytes": 3327
+    },
+    {
+      "path": "recorder-project/reports/live-first-attack-2026-10-23.txt",
+      "sha256": "8b155b85a81d6eb59540d9f9915eae3124313c698133082d32d92a2f9bb179d4",
+      "bytes": 2591
+    },
+    {
+      "path": "recorder-project/reports/live-first-attack-roll-correction-2026-10-23.txt",
+      "sha256": "6a314fa222df9436feff1f6c7e96d396be4d49434ad23bba96271ab917b197b1",
+      "bytes": 2558
+    },
+    {
+      "path": "recorder-project/reports/live-first-turn-2026-10-23.txt",
+      "sha256": "5e78f4858639cec885aa61b3decd0aa5f7a5b672d4014bc62fd85a72b717efea",
+      "bytes": 1675
+    },
+    {
+      "path": "recorder-project/reports/live-validation-2026-10-23.txt",
+      "sha256": "a09e4fd66d388d55c3d4e0a7621d1bb44ad0c5f79d9d779999ec5dbe0fcae908",
+      "bytes": 5528
+    },
+    {
+      "path": "recorder-project/reports/lv01-diagnosis-2026-10-23.txt",
+      "sha256": "49fdc8e80b6c0797dab47ec59850c0e82e470c9b767b59e7a1acf70edfeaf62f",
+      "bytes": 10876
+    },
+    {
+      "path": "recorder-project/reports/lv01-held-turn-resolution-2026-10-23.txt",
+      "sha256": "0eb407319307e21fec8995fcc5cf145636cacb5b7a2d6e00b1b4b4b8dfa1f533",
+      "bytes": 2090
+    },
+    {
+      "path": "recorder-project/reports/lv02-roll-capture-2026-10-23.txt",
+      "sha256": "1d9da2cd215fb42608e8d7e21d84baac225540cadff119c1acec8cbb214bcfb7",
+      "bytes": 9159
+    },
+    {
+      "path": "recorder-project/reviews/design-round-1.txt",
+      "sha256": "0c116161f2cb81e39b5218a6f60587cdb0e5df2d9f1b2ae977f58e07457f8897",
+      "bytes": 2513
+    },
+    {
+      "path": "recorder-project/reviews/final-independent-review.txt",
+      "sha256": "740facaf2f1e5b6ad164ab45618a4536f4bce64848a6f55ebab0886b971fb849",
+      "bytes": 4149
+    },
+    {
+      "path": "recorder-project/reviews/implementation-dispositions.txt",
+      "sha256": "4013ed581f99376d755af2dc3884509b181c6b4ae269da9e8702e07a85875399",
+      "bytes": 8491
+    },
+    {
+      "path": "recorder-project/reviews/implementation-round-1.txt",
+      "sha256": "ee8bc02f1eff7ced41c5f1d4c67238660cbe6a42961e1c88c3dd4096506cf3eb",
+      "bytes": 9087
+    },
+    {
+      "path": "recorder-project/reviews/implementation-round-2.txt",
+      "sha256": "1805710f84c48eadd9f3a7e11b1a38f7606c7868518fc6568407b5d44ef99b36",
+      "bytes": 6342
+    },
+    {
+      "path": "recorder-project/reviews/implementation-round-3.txt",
+      "sha256": "e5e9ff7e0f731b69b3f4d0b8cf36c1911400cedc0070eae574461d5993ee422a",
+      "bytes": 2906
+    },
+    {
+      "path": "recorder-project/reviews/legacy/chapel-runtime-intake-independent-review-v150-r1-verify-failed.json",
+      "sha256": "b73f5bcaf5433f3e7504680a684b3c66ca280108c32601af30614d09f8ae0020",
+      "bytes": 11992
+    },
+    {
+      "path": "recorder-project/reviews/legacy/chapel-runtime-intake-independent-review-v150.json",
+      "sha256": "6e79967f2e64389587a45988862670992f08bf8bf3255f6913b3cdc459ebdba6",
+      "bytes": 12783
+    },
+    {
+      "path": "recorder-project/tests/check_syntax.lua",
+      "sha256": "eec047547ed152006dccaa03aca212499143ebe7531a418395471897e6f02931",
+      "bytes": 859
+    },
+    {
+      "path": "recorder-project/tests/harness.lua",
+      "sha256": "b2dd966aa18b64c2e6995d8ab38287dc8e75429816808e8c6514e05c5c288c2b",
+      "bytes": 1643
+    },
+    {
+      "path": "recorder-project/tests/json.lua",
+      "sha256": "84105ebfb2af22cb33d1876c5826192b2b4850b0db91e65442eaefc81122ad5a",
+      "bytes": 5353
+    },
+    {
+      "path": "recorder-project/tests/mock_se.lua",
+      "sha256": "71f6d102eec00ae6d840c800134cba494470ccc644e23347a502a17e92af66ac",
+      "bytes": 21151
+    },
+    {
+      "path": "recorder-project/tests/mutation_check.py",
+      "sha256": "c7423e424e41beeb2e63e5d7b5314222169ec96cb16557ffb75a0e97819aba3a",
+      "bytes": 8721
+    },
+    {
+      "path": "recorder-project/tests/partreader.lua",
+      "sha256": "059e5262fa9787dfcac60429b0b084cf203b8286d58327bc6fc784cddc0d2313",
+      "bytes": 3063
+    },
+    {
+      "path": "recorder-project/tests/run_all.py",
+      "sha256": "8d30d50e3a66baa1a84c672161fa16b47ad57bd07265fd6f561f66adfd30c5fd",
+      "bytes": 2469
+    },
+    {
+      "path": "recorder-project/tests/test_probe.lua",
+      "sha256": "8b7e38c738c98a5de1dd52c1f3ed36ec147c3e620a929fc93c5a32b5692c52b3",
+      "bytes": 16727
+    },
+    {
+      "path": "recorder-project/tests/test_reassemble.py",
+      "sha256": "589bdcefdd48e08292c337b9e1f1eda69e90fc293a886c748fe966262f3e3516",
+      "bytes": 34324
+    },
+    {
+      "path": "recorder-project/tests/test_recorder.lua",
+      "sha256": "3aa51010182be88e2ad6ddabeacc7924170ab6c49e7cbea9d4ae2437d2d6e71f",
+      "bytes": 78895
+    },
+    {
+      "path": "recorder-project/tests/test_stamped.lua",
+      "sha256": "5defd0190266248e826b1ddde9ebda17db0d268280cbcbcb9424fdc64862e394",
+      "bytes": 1823
+    },
+    {
+      "path": "recorder-project/tools/lua54.py",
+      "sha256": "11a315d9e63533ea4944ccbe4a3cde116b606542f07f4234741c98c879f30181",
+      "bytes": 2454
+    },
+    {
+      "path": "recorder-project/tools/probes/lv01_status_probe.lua",
+      "sha256": "92a99c32f76a5ec5ef0b405214f3296853efc743ba77ba5da088ebbe5bbb62cf",
+      "bytes": 9369
+    },
+    {
+      "path": "recorder-project/tools/probes/lv01_status_probe_v2.lua",
+      "sha256": "6d89e3877539053cd0f89b6085a232de87a4b48f3f5e19a800fd905ab3cdf686",
+      "bytes": 13452
+    },
+    {
+      "path": "recorder-project/tools/reassemble.py",
+      "sha256": "82c93f3d1be7fa12b3a1aa353f31985e7aa40b0adb2c40e69af0b67cbe881755",
+      "bytes": 31866
+    },
+    {
+      "path": "recorder-project/tools/stamp_build.py",
+      "sha256": "9464ddfca01b860ec4f4e931fd5f8f34ba4f3ab6fc8a18f584062e05ca602bde",
+      "bytes": 3822
+    }
+  ]
+}

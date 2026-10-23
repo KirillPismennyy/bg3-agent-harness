@@ -1,0 +1,15 @@
+Implementation handoff -- design reviewed; implementation delivered and independently verified OFFLINE
+
+Implement only in D:\MyCode\BG3 control bot. Read README.txt, docs/PROVENANCE.txt, docs/DESIGN.txt and all reviews. Preserve baseline/FightRec.lua byte-for-byte; derive recorder/FightRec.lua from it. Do not deploy to AppData. Do not edit the separate simulator, game files, saves or settings. No game launch.
+
+All Lua, test, benchmark and reassembly executable code must be written by exact Claude Opus 5.5 (claude-opus-5-5). Do not substitute aliases or another model, and do not spawn other coding models. Model runtime metadata must confirm identity. Codex may inspect and run code but may not author implementation or harnesses.
+
+Deliver (1) scoped recorder implementation with capability-dependent writer, correctness and small checkpoint fixes; (2) offline mocks/tests and a part-reassembly validator that reads without importing outcomes into a simulator; (3) repeatable benchmark and honest results, preserving all failures and review rounds; (4) README covering schema, options, performance targets versus observations, unsupported/live-pending features and manual live checklist. No simulator implementation in this stage.
+
+Sequence: core writer/accounting/XYZ/metadata/Result; offline tests; dynamic checkpoints and optional movement disabled by default; UI single-flight/backlog/integrity fixes; benchmark old versus new under matched workload. Experimental functor capture disabled until explicitly enabled and source/API checked; no full miss/save coverage guarantee. If a feature cannot be implemented safely without live evidence, mark it unsupported and explain exact follow-up. Do not fake runtime APIs for production just because a mock accepts them.
+
+Commit narrowly, never git add -A across captures. Keep raw evidence outside Git; report changed paths, commands, results, unresolved limitations and commit IDs. Retain every failed test/result and consequential finding with resolution. Read final independent-review disposition before starting: blocking design findings must be addressed in prose first.
+Design-review gate: Read mandatory section 9 in DESIGN v1.1 and reviews/design-round-1.txt. Implement generation/reload ownership, terminal reservation cleanup and prep observation identity as acceptance requirements. Core implementation may begin only after independent reviewer confirms no blocking prose findings. Optional hook declaration pinning remains open and gates enablement, not core writer work.
+
+
+Delivery status: exact-Claude implementation committed, independent source review and full offline run accepted. See reviews/final-independent-review.txt, reviews/implementation-dispositions.txt, reports/independent-validation.txt and reports/benchmark-2026-10-23.txt. Historical capture comparison/replay and live validation remain separate; no live deployment/game launch authorized here.

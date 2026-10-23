@@ -1,0 +1,8 @@
+LIVE FIRST-TURN OBSERVATION -- 2026-10-23
+User reports first turn ready, no combat actions, waited for flush, combat log closed throughout.
+Preserved active prefixes and SHA256 manifest: work/live-validation/20261023T121205Z-b74bcf2e/first-turn-observation/. These are ongoing prefixes, not finalized evidence.
+All eight expected chapel actors observed: cust, Shadowheart, Astarion, Gale, Gimblebock, Taman, Warryn, Quelenna. Actual three-coordinate positions present. Health/resources readable in inspected dynamic checkpoints.
+LV01 OPEN: all four party actors have statuses unavailable because e.StatusContainer is nil, with field-level error at line1151. NPC status lists contain ENABLE_AOO/HEALTHBOOST_HARDCORE. Party TRAVELBLOCK_CANTMOVE events appear applied then removed in prehistory; absent optional component may mean no statuses, but unverified and must not silently convert unknown to empty.
+Client observed 3 entry groups complete=true/backlog0 while panel closed: XP, dialog, Combat Round1. Closed-panel route works for these observations; attack/dice capture remains untested.
+31 BeforeDealDamage events in preserved prefix are unattributed_global with BURNING_LAVA, not evidence of user attacks or chapel attribution. Idle reconciliation continues generating records.
+User instructed to hold at current first turn and leave log closed. Exact Claude Opus5.5 diagnosis/fix delegated by cc:rescue resume job task-mvkxz7df-8okrik; all code/probes/tests remain Claude-authored. No recorder code change or redeployment performed by Codex. Need review diagnosis before continuing or restarting recapture. No completed-stream acceptance or performance pass claimed.

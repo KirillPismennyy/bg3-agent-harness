@@ -1,0 +1,179 @@
+{
+  "schemaVersion": 1,
+  "createdUtc": "2026-10-22T11:23:10.598678+00:00",
+  "status": "accepted_with_explicit_limits",
+  "rounds": 1,
+  "scope": "v150 runtime intake and qualification only; exterior chapel before/after pair, stable inputs, saved rules/build and observed gear. No simulator/native transaction acceptance.",
+  "findings": [
+    {
+      "id": "V150-SETUP-001",
+      "round": 1,
+      "consequential": false,
+      "state": "resolved",
+      "originalFinding": "Duplicate HONOUR_STATS UUID detected; Shared LoadModule Honour versus GustavX HonourX. Compared modifier defaults/settings identical; both definitions now retained without guessing precedence.",
+      "resolution": "resolved in submitted producer; failed script retained",
+      "resolutionRound": 1,
+      "origin": "retained producer setup history"
+    },
+    {
+      "id": "V150-SETUP-002",
+      "round": 1,
+      "consequential": false,
+      "state": "resolved",
+      "originalFinding": "Overstrict requirement for party UUID=level CurrentTemplate failed. Exact mapping established only for four chapel NPCs; party save positions explicitly unknown, not joined by order.",
+      "resolution": "resolved in submitted producer; failed script retained",
+      "resolutionRound": 1,
+      "origin": "retained producer setup history"
+    },
+    {
+      "id": "V150-REVIEW-SETUP-001",
+      "round": 1,
+      "consequential": false,
+      "state": "resolved",
+      "originalFinding": "Reviewer checker initially assumed every final tracked entity had pos and every snapshot contained only the eight actors; KeyError on positionless item rows.",
+      "resolution": "Final snapshot independently inspected: 15 tracked entities include items/scenery; all present pos arrays are X-only. Checker now qualifies position presence and separately joins eight actor UUIDs.",
+      "resolutionRound": 1,
+      "origin": "independent reviewer checker setup"
+    },
+    {
+      "id": "V150-REVIEW-SETUP-002",
+      "round": 1,
+      "consequential": false,
+      "state": "resolved",
+      "originalFinding": "Review --verify initially compared in-memory tuple difference pairs against their persisted JSON list forms, causing equality AssertionError after otherwise passing checks.",
+      "resolution": "Normalize generated report through JSON before writing/comparing; original failed-verification review retained as evidence/chapel-runtime-intake-independent-review-v150-r1-verify-failed.json.",
+      "resolutionRound": 1,
+      "origin": "independent reviewer serialization setup"
+    }
+  ],
+  "counts": {
+    "totalFindings": 4,
+    "resolvedFindings": 4,
+    "openFindings": 0,
+    "blockingFindings": 0,
+    "newReviewConsequentialFindings": 0,
+    "newReviewMinorFindings": 0
+  },
+  "checks": {
+    "requestedProducerVerifyCommandsPassed": [
+      "python tools/qualify_chapel_runtime_v150.py --verify",
+      "python tools/extract_chapel_capture_comparison_v150.py --verify"
+    ],
+    "rawCopies": 8,
+    "qualifiedInputPins": 16,
+    "comparisonInputPins": 6,
+    "identicalSerializedSettings": 19,
+    "dataLevelDifferences": {
+      "IRONMAN_MODE": [
+        "False",
+        "true"
+      ],
+      "CAMP_COST_MULTIPLIER": [
+        "1",
+        "2"
+      ],
+      "TRADE_PRICE_MODIFIER": [
+        "2.5",
+        "3"
+      ]
+    },
+    "saveBuilds": [
+      [
+        "4.1.1.7631656"
+      ],
+      [
+        "4.1.1.7631656"
+      ]
+    ],
+    "snapshotLines": [
+      82,
+      636
+    ],
+    "observedInitialActors": 8,
+    "finalTrackedEntities": 15,
+    "exactSavedCurrentTemplateNpcMatchesPerSave": 4,
+    "partySaveTemplateJoins": 0,
+    "preSeconds": 21,
+    "postSeconds": 10,
+    "combatLogCounts": {
+      "locate": 9,
+      "entry": 479,
+      "route_lost": 6
+    },
+    "duplicateModifierDefinitions": [
+      {
+        "uuid": "ef0506df-da9f-40e2-903a-1349523c1ae4",
+        "loadModules": [
+          "Honour",
+          "HonourX"
+        ]
+      }
+    ],
+    "stateOperationSuccesses": 8
+  },
+  "notes": [
+    "HonourX module identity matches retained official metadata, including dependency on Honour. No undocumented merge precedence inferred.",
+    "meta_sha256 in intake is the original meta.lsf hash per inspect_saves.py, not the meta.lsx hash; both files are independently pinned here.",
+    "Initial review context reads exceeded small-output target; subsequent reads bounded. Missing parent AGENTS.md and PowerShell rg wildcard path errors were resolved by actual local AGENTS.md and directory/glob search; no submitted artifact was changed."
+  ],
+  "limits": [
+    "Only data-level default-plus-explicit comparison against retained official LSX is accepted; full native rule effectiveness and hook/component integrity remain unproved.",
+    "Metadata version history and SaveInfo both say 4.1.1.7631656; this does not fingerprint the running game binary or prove vanilla replay validity.",
+    "No gameplay mods is user clarification corroborated by saved Modded/HasUnofficialMods false, not an exhaustive runtime audit.",
+    "Current copied revised Lua postdates capture and is untested by user report; capture producer version is unavailable. Current code explains an X-only pattern but is not authenticated capture code.",
+    "All present snapshot positions contain only X; the final snapshot also tracks items/scenery, including two rows without pos. Save coordinates are earlier/later, not full combat-start coordinates; four party UUID-to-save-template joins remain unknown.",
+    "479 parseable combat log entries plus 6 route_lost records cannot establish no missing or duplicate events. Reported hitches limit timing interpretation.",
+    "Eight observed initial actors are not proof of every transient native participant/subscriber. Gear is copied runtime snapshot observation, not reconstruction by saved serialization order or complete availability proof.",
+    "Exterior Warryn/Quelenna/Taman/Gimblebock observations do not close the separate interior door guard UUID4000f859... loadout blocker.",
+    "Operations logs retain eight successful state transformations. This review hashes/parses retained extraction products; it does not rerun Divine or independently prove extractor completeness.",
+    "No gameplay launch/save/mod/settings edit, new action, AI behavior, native ordering, RNG binding, replay, encounter or Act1/full vanilla parity accepted."
+  ],
+  "productionChanged": false,
+  "actionAccepted": false,
+  "vanillaParityAccepted": false,
+  "inputHashes": {
+    "evidence/chapel-runtime-intake-independent-review-v150-r1-verify-failed.json": "b73f5bcaf5433f3e7504680a684b3c66ca280108c32601af30614d09f8ae0020",
+    "evidence/chapel-runtime-intake-v150/chapel-comparison.json": "2250e8e8de8918f70dba839997e3782b8f7f4a3f55147c4861077d844ca26ac5",
+    "evidence/chapel-runtime-intake-v150/intake.json": "ce346233dee235146f0cec1fb2507a709aa142421f4c82d413f6c45bc1fede4c",
+    "evidence/chapel-runtime-intake-v150/metadata/extracted/save-metadata/064a00c413de39e7/meta.lsf": "073779ac40628a82ebfa0d604fdfefc59789e8a99cd3d43c12443fd1d6ebcf79",
+    "evidence/chapel-runtime-intake-v150/metadata/extracted/save-metadata/064a00c413de39e7/meta.lsx": "ab44c5d1c07e955dd0d7a1d3d9bd583c3db3a6ad21bb09b49065f49df6971828",
+    "evidence/chapel-runtime-intake-v150/metadata/extracted/save-metadata/064a00c413de39e7/saveinfo-extract-result.json": "82210bf53e734752eca79415ea05207e9259aba2ed64935248443722529dd969",
+    "evidence/chapel-runtime-intake-v150/metadata/extracted/save-metadata/064a00c413de39e7/SaveInfo.json": "c59838963bab588b0e75f6ccbf6aa2e1cddce207e733540d4c1f322d7fa3ce26",
+    "evidence/chapel-runtime-intake-v150/metadata/extracted/save-metadata/91c2f8cf078285b3/meta.lsf": "14cfe298814963d8c0f969d7d3711d9fcf75567890838b928356258620d549c9",
+    "evidence/chapel-runtime-intake-v150/metadata/extracted/save-metadata/91c2f8cf078285b3/meta.lsx": "4273865533403b2e8040a93b81797e910e1dafc05d3fd14ec7da626ca4cfc701",
+    "evidence/chapel-runtime-intake-v150/metadata/extracted/save-metadata/91c2f8cf078285b3/saveinfo-extract-result.json": "5fa81bc9925fd157822fb192e7ba3968e53805217df3655eb4c58ce6c1bed8c3",
+    "evidence/chapel-runtime-intake-v150/metadata/extracted/save-metadata/91c2f8cf078285b3/SaveInfo.json": "8127fb2b622730de9c6fcb23f031f38978e1f82b6e8071c20f7f7b9d721e15ff",
+    "evidence/chapel-runtime-intake-v150/qualification.json": "fd153f2959f7a6f701862488dce2b3296697622288eba689d19f7f034bc95df2",
+    "evidence/chapel-runtime-intake-v150/raw/1792664924-fight01.jsonl": "0525a882da3aee0af478b882b7e3a8f64c2b4a18090b798e45c5847958f59292",
+    "evidence/chapel-runtime-intake-v150/raw/1792664924-fight02.jsonl": "79590f2fe7dde33727d226714ac12732a947c401dd2495adf1dfaeca29c33d70",
+    "evidence/chapel-runtime-intake-v150/raw/1792664924-fight03.jsonl": "6a5e3fc2667541b0f08e3ef8a5d533853944fb07879cb51d417c21330cdcdf2e",
+    "evidence/chapel-runtime-intake-v150/raw/1792664924-fight04.jsonl": "d8dfe3ac074f250895c4398ff6f276e3f54b3e6daa3d5a2ed8bd38bc641626a5",
+    "evidence/chapel-runtime-intake-v150/raw/1792664927-combatlog.jsonl": "8ed27f872a1361f211c9708c892fca44f67217054cbda7f2344ff1c50111a2bf",
+    "evidence/chapel-runtime-intake-v150/raw/FightRec.lua": "a8a72fa165dae06df499821e04c2fc8e3199cc8f1ab96a1fbfd587fb772af4a9",
+    "evidence/chapel-runtime-intake-v150/raw/QuickSave_4.lsv": "83c094884da39d5c5735bdc066b88450994f3c4c9dffa90ce5f645ec1f9ebf03",
+    "evidence/chapel-runtime-intake-v150/raw/QuickSave_5.lsv": "c25b5482456bf2782ae06ced5640f76c0e0003d22192bc1979d37aab0b87d9c9",
+    "evidence/chapel-runtime-intake-v150/state/operations.json": "19c0759cca60c4a5c38f7a430dbd64af5efaea657139e9b82a13d05f2e41eb64",
+    "evidence/chapel-runtime-intake-v150/state/QuickSave_4/Globals.lsf": "f7fa820c343b011b65da11ebd9ee19718514a6934c96231e4e635af2dba6e26f",
+    "evidence/chapel-runtime-intake-v150/state/QuickSave_4/Globals.lsx": "b4a06158cc9ac9156badba54f37c2871baf998e83d734ff831005f57dc40aad3",
+    "evidence/chapel-runtime-intake-v150/state/QuickSave_4/LevelCache/WLD_Main_A.lsf": "7279d8091d2487bdbbbba46ebd84a939889983d8372dd132fd8e34b750ac94e8",
+    "evidence/chapel-runtime-intake-v150/state/QuickSave_4/LevelCache/WLD_Main_A.lsx": "6bc04bfb51d7e85223fec47aea546c52aff579a2eab38ae3aa766104d3bdd88c",
+    "evidence/chapel-runtime-intake-v150/state/QuickSave_5/Globals.lsf": "68e900b446b5c65a28a1a5534dcfd5a49153b8cbc13d2398263bbd4256ac3080",
+    "evidence/chapel-runtime-intake-v150/state/QuickSave_5/Globals.lsx": "6981ade260c9c10459de0f15ba2d566446b937a082fc19c374922293f9caecba",
+    "evidence/chapel-runtime-intake-v150/state/QuickSave_5/LevelCache/WLD_Main_A.lsf": "65102a49c02b6e94b437cbff804a6f9679addc2e46973f05ebfe060da433c7f1",
+    "evidence/chapel-runtime-intake-v150/state/QuickSave_5/LevelCache/WLD_Main_A.lsx": "0a339b1b1336c6879482f2bffe7b4b3d91acead3b997a55ef20c45c54e4afcc9",
+    "evidence/npc-rules-findings.json": "11eb5cfc9a5a42cd9dd778dd3c407cc9afaca4a3b848eb85e0a6a341e308865f",
+    "extracted/npc-rules/GustavX/Public/GustavX/Ruleset/RulesetModifiers.lsx": "4f0aa6d2aa2ae82c96f3c1e1ff4150701cfc13820ce0013473d83a5d698fad5e",
+    "extracted/npc-rules/Shared/Public/Shared/Ruleset/RulesetModifiers.lsx": "46ea25e35322ee5c74d5850465e1ffa8968d786998fc9a576c3f1f86ed14286d",
+    "extracted/npc-rules/Shared/Public/Shared/Ruleset/RulesetSelectionPresets.lsx": "86f42c2c1faa01d8ad7e65b907bf9ea9ee8e6b6fba2cc086e06db6c1e8855089",
+    "extracted/npc-rules/Shared/Public/Shared/Ruleset/RulesetValues.lsx": "50fc103573d3438a02ef574d6bbc892e4cb778cddd0b8cf8f65aad397f9ed144",
+    "tools/extract_chapel_capture_comparison_v150-r1-failed.py": "88ea41d4c9735be1fb8c05f8663429504b86ee9e33057ad045dc5452b48ce58a",
+    "tools/extract_chapel_capture_comparison_v150.py": "99acc081600d0268c211241fc5c40b841caaa5aede945d683dcab5403ec72fef",
+    "tools/inspect_saves.py": "1d258ba5b7fdba2ab924743fb8c71049c8e9b92bdb8eaff9f4ba9122b83af914",
+    "tools/intake_chapel_runtime_v150.py": "ff9d4492353b28819fc7b90b687733a42cccd90ada8e4047fe6da3a6df80397b",
+    "tools/qualify_chapel_runtime_v150-r1-failed.py": "4fdda0d09a7c023d70bd8f28b7aab18c2ca8a648de71642e0d1b77528f03a286",
+    "tools/qualify_chapel_runtime_v150.py": "2e35c2e9fac5bae3ad3f243408bedb30d0b178eeb489d9f5b33ad1c87c2ae21b",
+    "tools/review_chapel_runtime_intake_v150.py": "bc74859322a738edd5c1318cc10abc65200251d61cb8ce5947930e6a54cd0d62",
+    "../extracted/base/GustavX/Mods/HonourX/meta.lsx": "c08600fea2e73a5592bf8dc25e6ab516d34ab056424ea549cb7e238a03b56cca",
+    "../tools/lslib/Packed/Tools/Divine.exe": "65c47a5050e55f686b55484a901a01d0f1a1d5ba0e776f65fec71d3e1b2a16b7"
+  }
+}

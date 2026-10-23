@@ -1,0 +1,121 @@
+LV01 DIAGNOSIS -- 2026-10-23 -- Claude Opus 5.5 (claude-opus-5-5)
+Scope: live finding LV01 (reports/live-first-turn-2026-10-23.txt). Read-only use of the preserved first-turn
+prefixes (work/live-validation/20261023T121205Z-b74bcf2e/first-turn-observation/, manifest unchanged). No
+deployment, no AppData change, no game/save/simulator change, no commit. Codex reviews before any deployment.
+
+Observed (preserved prefix, server fight01 p00001, sha256 f8016f23...cd365)
+- Snapshot seq11: the four party characters carry statuses=[] AND statuses_error "[string "?"]:1151: attempt to
+  index a nil value (field 'StatusContainer')"; the four NPCs list ENABLE_AOO + HEALTHBOOST_HARDCORE with
+  instances 144115192370856865..877. Turn checkpoints / reconcile: party statuses {unavailable=<same error>}.
+- Same code path, same Ext.Entity.Get(uuid) entity on which Health/ActionResources read fine.
+
+Primary-source finding (pinned af85fd2; hashes in docs/API-PINS.txt LV01 addendum)
+- LuaEntityProxy.inl EntityProxyMetatable::Index: a key in the property map that names a component pushes the
+  component or nil when GetRawComponent(handle, component) is null. An unknown key raises "Not a valid
+  EntityProxy method or component type". Therefore e.StatusContainer == nil on party entities means: the entity
+  has NO eoc::status::ContainerComponent at that moment. It is not a wrong name/route for that component (the
+  identical key works on NPCs), and the error at line 1151 is our nil-index, not an SE failure.
+- Components/Status.h declares the component (Statuses: HashMap<EntityHandle, FixedString>) but nothing in the
+  pinned source states when the engine adds or removes it. "Absent <=> no statuses" is therefore NOT established
+  by source. A second, independent server route exists: status entities carrying esv::status::StatusComponent
+  (Lua "ServerStatus"){Entity, StatusId, Type}; Entity.inl GetAllEntitiesWithComponent can enumerate them.
+- Prehistory TRAVELBLOCK_CANTMOVE applied->removed on the party is consistent with "component removed when the
+  last status went away", but is circumstantial. Verdict: UNRESOLVED pending the read-only probe below.
+
+Defect fixed now (independent of the probe outcome; does not convert unknown to empty)
+- D1 snapshot wrote statuses=[] beside statuses_error: a reader ignoring statuses_error sees "no statuses".
+  Violates DESIGN ("distinguish absent status, unknown status ..."). Fix: snapshot statuses is now
+  {unavailable, component_absent?} on failure (statuses_error kept with the same text for older readers).
+- D2 absence was reported as a raw Lua index error. Fix: statusEntries reads e.StatusContainer under pcall; nil
+  -> {unavailable="StatusContainer component absent (eoc::status::ContainerComponent); not read as empty",
+  component_absent=true}; other failures unchanged ({unavailable=<error>}). A present container with no entries
+  remains the only source of an observed [].
+- VERSION 2.0.0-dev.1 -> 2.0.0-dev.2 (record shape change for the failure case).
+Not done (dependent on evidence): treating component_absent as empty, or adding a per-checkpoint fallback route.
+
+Changed files
+  recorder/FightRec.lua      statusEntries/character/dyn, STATUS_ABSENT, VERSION
+  tests/mock_se.lua          entity may lack StatusContainer (statuses=false): Index returns nil like the pin
+  tests/test_recorder.lua    case "LV01 absent StatusContainer is explicit component_absent, never an empty list"
+                             (fails on HEAD 6bf049f recorder: verified with FR2_RECORDER=work/lv01/FightRec-head.lua)
+  tests/mutation_check.py    mutant LV01 (absent -> {}) must be detected
+  tools/probes/lv01_status_probe.lua   NEW read-only live probe (below)
+  tests/test_probe.lua       NEW 5 offline cases for the probe logic against a fake of the pinned declarations
+  tests/run_all.py           runs tests/test_probe.lua
+  docs/SCHEMA.txt, docs/API-PINS.txt, docs/LIVE-CHECKLIST.txt (L-09), README.txt, this report
+
+Offline results (host Lua + mocks; not live behaviour)
+  python tests/run_all.py -> ALL OFFLINE CHECKS PASSED: syntax; 72 Lua cases (71 + LV01); 5 probe cases; 44 Python
+  cases; stamp build/verify; stamped load; 20 mutants all detected (19 + LV01); baseline pin OK.
+  Unstamped recorder content_sha256 747615bae78ebcace7f6f88d50563ebf8f01898a0f539b611c16f77a244d829b; a stamped
+  build from it at work/build/FightRec.lua had artifact_sha256 cd94c663e0fac3feba8c79eb282f34fd765171eed59d3139e272a54e7803760a.
+  probe sha256 92a99c32f76a5ec5ef0b405214f3296853efc743ba77ba5da088ebbe5bbb62cf (re-hash before use).
+
+Read-only live probe (needed to resolve LV01; can run NOW at the held first turn, without reloading the recorder)
+  What it reads: DB_Players, CombatGetGuidFor, DB_Is_InCombat, GetDisplayName/ResolveTranslatedString,
+  HasActiveStatus (Osiris queries); Ext.Entity.Get, e.StatusContainer, e:HasRawComponent,
+  e:GetAllComponentNames(), Ext.Entity.GetAllEntitiesWithComponent("ServerStatus"/"StatusContainer"),
+  ServerStatus.{Entity,StatusId,Type}; HandleToInteger. It defines no globals, never touches FightRecV2, makes no
+  status/component/Osiris changes. Only write: one NEW file FightRec2Probe/lv01-status-<epoch>[-n].json (outside
+  FightRec2/, LoadFile-probed first, never overwrites). One full scan of server status entities may cause a
+  brief hitch; the recorder may log that tick normally.
+  Controls: the four NPCs (container present). If their container instances equal their ServerStatus-owned
+  instances, route_validated=true and each party actor gets ABSENT_AND_NO_STATUS_ENTITIES (absence = empty, now)
+  or ABSENT_BUT_STATUSES_EXIST (statuses live elsewhere: recorder route insufficient). Otherwise UNRESOLVED.
+  Deployment of the probe file is an operations step (Codex): copy tools/probes/lv01_status_probe.lua, unmodified,
+  as a NEW file to <Script Extender user folder, the one containing FightRec2\>\FightRec2Probe\lv01_status_probe.lua.
+  User console (SE console window; press Enter to get the prompt):
+      server
+      load(Ext.IO.LoadFile("FightRec2Probe/lv01_status_probe.lua"))()
+  Do NOT type reset / reset server / reset client (they destroy recorder state). Return the printed "LV01 probe"
+  lines and the saved JSON. Fallback without a file: type --[[ , paste the probe body, then ]]-- (pinned
+  Console.cpp multi-line mode; the probe contains neither terminator line).
+
+Dispositions
+  LV01  OPEN (narrowed): nil = component absent (source-verified); meaning of absence pending L-09 probe.
+  D1    FIXED offline (dev.2), pending Codex review; existing dev.1 captures: statuses [] beside statuses_error is
+        UNKNOWN (SCHEMA note).
+  D2    FIXED offline (dev.2), pending Codex review.
+  The installed dev.1 build keeps running unchanged; dev.2 needs review, redeployment and a fresh recapture
+  after reset. No full live capture, live coverage or performance claim is made.
+
+ROUND 2 -- probe v1 live result and probe v2 (Claude Opus 5.5, claude-opus-5-5)
+Probe v1 live result (server context; raw report retained by Codex, not modified):
+  work/live-validation/20261023T121205Z-b74bcf2e/lv01-status-1792760275.json
+  sha256 1a626b27ea493cab5d87f0828fc6d192187161a68ea874c5f9f2e28179c9ddf5
+  errors=[], 8 targets, 3227 ServerStatus entities, status_container_entities 14, controls 0 ok / 4 bad,
+  route_validated=false. Party: container nil, has_raw_container=false, Osiris 0 for the three ids. NPCs: containers
+  with HEALTHBOOST_HARDCORE + ENABLE_AOO (HasActiveStatus 1/1) but owned=[]; all 3227 status entities counted under
+  server_status_other_owners.
+Finding PV1 (probe v1 defect): v1 assumed ServerStatus.Entity names the status bearer. Live controls refute it: no
+  status entity's Entity equals any of the 8 target handles. Also v1 counted a nil/unreadable handle as "unmatched"
+  instead of an error, and never checked that container keys are scanned status entities. v1's offline fake
+  hard-coded Entity = bearer, so the wrong assumption passed offline. Disposition: v1 result INCONCLUSIVE; nothing
+  about party statuses is concluded from it. v1 file kept unchanged (sha256 92a99c32...b62cf).
+Candidate route: pinned Components/Status.h esv::status::OwnershipComponent (Lua ServerStatusOwnership){EntityHandle
+  Owner}. The pinned sources state no role for Owner (nor for StatusComponent.Entity); v2 therefore accepts it only
+  through live controls.
+Probe v2: tools/probes/lv01_status_probe_v2.lua  sha256 6d89e3877539053cd0f89b6085a232de87a4b48f3f5e19a800fd905ab3cdf686
+  (13452 bytes, ASCII, LF). Groups status entities by ServerStatusOwnership.Owner; per control records every
+  container key's in_scan / owner / Entity (key_rows). route_validated only if ALL gates hold: no_errors
+  (error_count 0, any read error counted), scan_complete (enumeration succeeded, scanned == total > 0),
+  no_missing_handles (no status entity without instance handle, Ownership component or readable Owner; no read
+  errors), controls_present, all_controls_match (each control: every key in scan, owned by it, owned set == key set).
+  Otherwise every absent actor is UNRESOLVED_route_not_validated. Output file FightRec2Probe/lv01-status-v2-<epoch>.json
+  (new, never overwritten). Note: if some unrelated status entities legitimately lack Ownership, the strict gate
+  reports UNRESOLVED with counts in scan{}; that is intended (no silent acceptance).
+Tests: tests/test_probe.lua (sha256 8b7e38c738c98a5de1dd52c1f3ed36ec147c3e620a929fc93c5a32b5692c52b3) 15/15 pass. The fake
+  now gives status entities Owner = bearer and, by default, an Entity that never names a target (as observed
+  live); "v1 on the live-like world" reproduces the live 0/4 result. v1 legacy cases run in an explicit
+  entityField="bearer" world. v2 cases: validation, party-owned status reported as existing, and each gate
+  (missing Ownership, unreadable Owner, missing instance handle, enumeration failure, control key not scanned,
+  extra owned status, no controls). Manual mutants via FR2_PROBE2: Owner->Entity route: 4/9 v2 cases fail;
+  enumeration gate removed: 1/9 fails (work/lv01/v2-mutant-*.lua, git-ignored).
+Full suite after v2: python tests/run_all.py -> ALL OFFLINE CHECKS PASSED (72 Lua, 15 probe, 44 Python, stamp
+  build/verify, stamped load, 20 mutants, baseline pin). Recorder unchanged since round 1 (content 747615ba...829b).
+Console (Codex stages the reviewed v2 file only, as FightRec2Probe/lv01_status_probe_v2.lua; user, at the S >> prompt
+  after typing "server" while the prompt is visible and seeing "Switching to server context."):
+      Ext.Utils.LoadString(assert(Ext.IO.LoadFile("FightRec2Probe/lv01_status_probe_v2.lua")))()
+  Never type reset / reset server / reset client.
+Dispositions: PV1 recorded (v1 inconclusive, route refuted). LV01 OPEN until the v2 live result. Recorder keeps
+  component_absent as unknown; no inferred-empty change.

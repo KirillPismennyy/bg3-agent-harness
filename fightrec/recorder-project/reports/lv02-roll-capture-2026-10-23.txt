@@ -1,0 +1,101 @@
+LV02 ROLL CAPTURE INVESTIGATION -- 2026-10-23 -- Claude Opus 5.5 (claude-opus-5-5)
+Scope: the reported roll-breakdown regression after the first live attack. Evidence was read only; no deployment,
+no commit, no Lua reset, no game/save/simulator change, and no user tooltip/hover work used or required.
+
+Evidence (read-only)
+  NEW  work/live-validation/20261023T121205Z-b74bcf2e/first-attack-observation/ (all 12 manifest hashes re-verified)
+       server fight01 p00008 (sha256 88e1263406e6bac00db373082d4c01d81046588da6d33fc76583813921839363, matches manifest): seq1478 DealDamage, seq1479
+       BeforeDealDamage, seq1480 DealtDamage, StoryActionId 388, cust -> Taman Target_MainHandAttack.
+       client combatlog p00001: seq5 i4 spell entry, seq6 i5 hit entry (complete=false), seq7 i6 "Dice rolled again!".
+  OLD  D:/MyCode/bg3 item mods/combat-sim/evidence/chapel-runtime-intake-v150/raw/1792664927-combatlog.jsonl
+       (sha256 8ed27f87...111a2bf, re-verified) and the same-session server file
+       AppData/.../Script Extender/FightRec/1792664924-fight04.jsonl (476833 bytes; PROVENANCE pin d8dfe3ac...).
+  CODE baseline/FightRec.lua (FR.reflect lines 43-82, FR.vmdump 449-476) vs recorder/FightRec.lua (dev.2).
+  The historical producer remains unknown; the baseline is compared as the closest available source only.
+
+CONFIRMED findings
+C1 Where the historical breakdown lives: the SERVER hook records, not the combat log. fight04 DealDamage /
+   DealtDamage / BeforeDealDamage `hit` reflections carry ConditionRolls[{Difficulty, Roll{Roll{Roll{DiceValue D20,
+   DiceAdditionalValue, AmountOfDices}, Advantage, Disadvantage}, Result{Total, NaturalRoll, DiscardedDiceTotal,
+   RollsCount}, Metadata{AbilityBoosts, ProficiencyBonus, RollBonus, ...}}}] and BeforeDealDamage
+   Damage.DamageRolls{<type>: [{Roll{Roll{DiceValue D6...}}, Result{Total, NaturalRoll}}]}.
+C2 The new capture HAS the same breakdown, automatically, uncut (no cut/depth_cut/_omitted/<budget> in hit):
+   attack: D20, NaturalRoll 10, DiceAdditionalValue 5, Total 15 vs Difficulty 13, Metadata Strength 3 +
+   ProficiencyBonus 2, RollsCount = two rolls 10 and 9, DiscardedDiceTotal 9 (consistent with the "Dice rolled
+   again!" entry); damage (seq1479): Slashing D12, NaturalRoll 6, +3, Total 9; FinalDamagePerType Slashing 9.
+   The capability was not lost.
+C3 LV02 defect (real regression, encoding): v2 reflect() wrote every key as tostring(k), so Lua sequences became
+   JSON objects: "ConditionRolls": {"1": {...}}, "RollsCount": {"1":..., "2":...}, "DamageRolls": {"Slashing":
+   {"1": {...}}}, "DamageList": {"1": ...}, "ImpactPosition": {"1","2","3"}. The baseline kept integer keys and
+   the historical raw has JSON lists ("ConditionRolls": [ {...} ]). Any reader indexing these as lists (as the
+   historical data allowed) finds no roll breakdown in dev.1/dev.2 captures although the values are present.
+C4 Client combat log: no regression. The historical raw has the same depth-cut paths for the same entry type
+   (historical record 5 vs new seq6: identical cut paths under Entries/.../TooltipEntries/*/CtxTransText and
+   ParamTooltips/.../Params/*/DiceTypeSet; 11 vs 13 cut nodes because the historical "Damage Roll: [1]" had one param and the new "Damage Roll: [1] = [2]" has two). "Attack Roll: [1]"
+   param Text is "" in all 87 uncut historical occurrences and in the new entry; Rolls / DamageRolls /
+   ExtenderData are empty ("?", no items) in all 3092 historical params and in the new ones. Every uncut
+   ls.VMDiceTypeSet is None/0/"" (historical 2628, new 36); every one under a roll tooltip param is depth-cut
+   in both (historical 477 cut). So neither capture ever held the client-side dice for those params.
+C5 Apparently equal ENTRY_DEPTH 8 / ENTRY_BUDGET 6000: confirmed same traversal shape for this entry type; the
+   budget was not the limit (seq6: 398 nodes); the depth was, in both. v2 additionally reports it (complete=false),
+   the baseline did not.
+
+CANDIDATES (not confirmed)
+K1 The cut ls.VMDiceTypeSet under "Attack Roll: [1]" / "Damage Roll: [1] = [2]" may hold the UI dice glyph data
+   (e.g. D20/D12, amount, string). Unknown content; dev.3 now records it (below), so the next capture shows it
+   without user action.
+K2 Lazy UI population: no evidence either way. The tooltip entries (AC 13, damage total 9) were already populated
+   in the one-shot read; the empty attack-roll Text is identical in 174 historical reads made by a poller of the
+   same design. Re-reading old entries was NOT added (no evidence it would change anything; it would add UI
+   cost). The authoritative breakdown is server-side (C2).
+K3 Boolean encoding: historical has "false" strings beside true booleans; new has booleans. Cause (SE version vs
+   encoder) not established; v2 scalar() does not stringify booleans. No change made.
+
+Failed assumptions recorded
+  - "The previous recorder captured the breakdown in the combat log": refuted by C4 (it was server-side, C1).
+  - "Equal depth/budget numbers prove parity": not relied on; parity shown by actual cut paths (C4/C5).
+  - "Omitted details are acceptable under the generic RNG disclaimer": not used; the dominant omitted node type
+    is now captured (fix F2), the remaining cuts are duplicate copies and stay marked incomplete.
+
+Fixes (2.0.0-dev.3; status-label work of dev.2 preserved)
+F1 reflect(): ownKeys() keeps integer keys when a table's keys are exactly 1..n (a Lua sequence) so JSON keeps
+   lists; any other key set is stringified as before (mixed keys cannot be encoded). A budget cut inside a
+   sequence appends "<omitted>" (stays a list); otherwise _omitted=true; budget.cut is set either way, so the
+   wrapper still reports {value, cut=true}. Same budget accounting and per-entry cost; one extra small array per
+   reflected table (allocation only; bounded by REFLECT_BUDGET). Applies to the table branch (Serialize output)
+   and the userdata pairs branch.
+F2 vmdump(): LEAF_PAST_DEPTH = {ls.VMDiceTypeSet}: at the depth limit its properties are copied only if ALL are
+   scalars (no recursion, node already charged to the budget); any non-scalar member keeps it _cut with no partial
+   copy. Runs inside the same deferred callback; no engine object is retained (test asserts 0 lifetime violations).
+   Other depth cuts (duplicated Entries/CtxTransText copies) still mark complete=false.
+Not changed: DealtDamage.result (copyResult) still omits ConditionRolls[].Roll (variant not pinned); the full roll
+   is in the hit reflection of the same record. Queue/loss bounds, single-flight deferred polling, ENTRY_DEPTH/
+   ENTRY_BUDGET and REFLECT_BUDGET defaults unchanged. No benchmark rerun: F1 adds per-table allocation only and
+   F2 adds at most a few scalar copies per cut dice set; both are unmeasured live (T-01 still open).
+
+Tests (tests/test_recorder.lua, built from the real nested shapes above)
+  LV02 roll breakdown keeps historical list shape -- live seq1479 values through BeforeDealDamage; asserts lists
+     in the decoded record AND in the raw JSONL text ("ConditionRolls":[, "RollsCount":[, "Slashing":[).
+  LV02 reflect: sparse/mixed keys stay objects, long uncut sequence complete.
+  LV02 reflect: budget cut inside a sequence keeps a pure list ending "<omitted>", cut flagged.
+  LV02 UI: live hit entry rebuilt from client seq6 (3 params, AC/Attack Roll/Damage Roll tooltips, empty
+     Rolls/DamageRolls/ExtenderData); deepest dice sets reach the output (synthetic D20/D12 markers, labelled as
+     such), no ls.VMDiceTypeSet cut remains, duplicate-path cuts remain, complete=false, 0 lifetime violations.
+  LV02 UI: dice set with a non-scalar member stays _cut with no partial fields.
+  All 5 fail against HEAD 6bf049f's recorder (FR2_RECORDER=work/lv01/FightRec-head.lua) and pass on dev.3.
+  Mutants added: "LV02 keys" (sequence branch disabled) 3/5 fail; "LV02 leaf" (exemption removed) 2/2 fail.
+  IR-07 mutant pattern retargeted to the rewritten table branch (same mutation: budget check removed); detected.
+  tests/mock_se.lua: setCombatLog entries may supply build(w) for a custom nested group.
+Full suite: python tests/run_all.py -> ALL OFFLINE CHECKS PASSED: 77 Lua, 15 probe, 44 Python, stamp
+  build/verify, stamped load, 22/22 mutants, baseline pin OK.
+  recorder content_sha256 8ec6f5c36bc6d3b468a444e0a83069985b9eb7262be165aa0da6ea09460e6e3e
+  stamped artifact (work/build/FightRec.lua) sha256 34a533de7acc38d1f72c4ab14d3da8768799cb8b69db975cfc098a040343ed87
+
+Live probe: none needed. The breakdown is already in the server records; K1 resolves itself on the next capture
+  with dev.3 without user interaction.
+
+Dispositions
+  LV02 FIXED offline (dev.3: F1 list encoding, F2 dice-set leaf), pending Codex review, redeployment and a
+       fresh recapture. Existing dev.1 captures keep the values (C2); readers must accept {"1":...} objects there.
+  K1/K2/K3 OPEN candidates as stated. LV01 status unchanged (see reports/lv01-diagnosis-2026-10-23.txt; probe v2
+       live result is recorded by Codex). No full live capture or performance claim.

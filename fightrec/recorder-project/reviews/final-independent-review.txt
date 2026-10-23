@@ -1,0 +1,26 @@
+Final independent review -- OFFLINE ACCEPTED -- 2026-10-23
+
+Independent reviewer confirmed NO BLOCKING SOURCE FINDINGS remain after round3 corrections.
+Recorder SHA256 5c3ddbf610cd4f3654b924e0dab1efa8422046321f1ef39fff1bc5d46c3635a9.
+Reassembler SHA256 82c93f3d1be7fa12b3a1aa353f31985e7aa40b0adb2c40e69af0b67cbe881755.
+IR06 resolved: guard every new part, orphan p2 bytes preserved, explicit failure. Guarantee is single-writer/non-atomic; external concurrent-writer race is not solved by check-then-write.
+IR13 resolved: legacy character collection validation + structured fallback, numeric/object characters and CLI regressions. All previous source approvals stand; every original finding/disposition remains in implementation-round1/2/3.
+IR16-19 benchmark method accepted in full007 source/results with documented limits; final full010 is now available for frozen source, final pins/prose still to be audited by parent.
+
+Claude-reported frozen run022: 71 Lua tests,44 Python tests,19 selected mutations detected, stamp/baseline/syntax checks pass. This is author execution evidence; independent reviewer did NOT execute tests (earlier access-denied attempt ran none).
+
+Parent will execute ONE complete existing offline suite AFTER companion exits, avoiding shared-output races, record exact command/result and hash comparison, then finalize acceptance. No further implementation request is implied by this pending parent audit; freeze source and complete documentation/commit. Parent may make a prose-only follow-up commit.
+
+Actual implementation model separately verified from local repository session metadata: only claude-opus-5-5. No source/test/harness implementation was authored by Codex or its review agent.
+
+Acceptance concerns offline implementation only. No live SE compatibility/performance, complete engine-event/RNG coverage, replay conformance, AI parity, vanilla Honour or Act1 parity accepted. No deployment/game launch/simulator changes authorized or performed. Initial chapel capture remains insufficient for complete replay; missing XYZ/dice and stealth boundary remain explicit.
+
+
+COMPLETED PARENT AUDIT (supersedes pending statements above)
+Command: work\venv\Scripts\python.exe tests\run_all.py
+Independent execution after companion exit: process exit0; 71Lua+44Python tests PASS; all19 selected mutants detected; syntax/stamp build+verify/stamped-load/baseline checks PASS. Full output retained as reports/independent-validation.txt (synthetic offline verification, no game log).
+All seven final full010 source pins match current files: baseline,recorder,bench,mock_se,json,runner,null_recorder. Exact recorder/reassembler hashes still match final source approvals. Final synthetic benchmark JSON retained in reports/benchmark-full-010.json; 180 measured trials,0 lifetime violations. No performance claim beyond report's host/mock scope; 571ms host-disk outlier preserved, not explained away.
+Fresh final SHA256 checks: installed FightRec.lua unchanged a8a72fa1...af4a9; fight04 d8dfe3ac...626a5; combatlog8ed27f87...11a2bf; QuickSave4 83c09488...9ebf03; QuickSave5 c25b5482...d9c9. Full hashes in PROVENANCE. git ls-files for .lsv/.jsonl/.log returned no tracked files.
+Actual model identity: sole implementation transcript contains only claude-opus-5-5 model fields; no substitution observed. All new implementation/harness/benchmark code authored by that Claude session; Codex performed specification, coordination, review and this independent run.
+Disposition: all consequential implementation findings IR01..IR20 resolved in code or accurately qualified as reviewed offline limits; all original findings, round2/3 residuals and resolutions retained. No blocking offline source/test findings remain. Design findings DR01..DR05 and legacy V150 review history also retained. Remaining API/runtime/durability/coverage/performance gates are in LIVE-CHECKLIST and reports, not implied accepted by passing tests.
+Accepted delivery is OFFLINE ONLY. Existing historical capture cannot establish full replay; no live deployment, game launch, simulator work, complete RNG/AI/gameplay-event coverage or full parity accepted.

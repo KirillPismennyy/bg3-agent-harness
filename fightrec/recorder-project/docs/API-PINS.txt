@@ -1,0 +1,103 @@
+API declaration pins used by recorder/FightRec.lua -- 2026-10-23 (Claude Opus 5.5, claude-opus-5-5)
+
+Pin: Norbyte/bg3se commit af85fd2bd2be28646539060d45df487f4d3314b9, the commit named by the cached v33
+Version.txt (C:\Users\John\AppData\Local\BG3ScriptExtender\ScriptExtender\33.0.0.0_73f6e7e3...\Version.txt,
+"Commit af85fd2..., Mon, 12 Oct 2026 23:32:13 +0200"). Files were fetched read-only from
+https://raw.githubusercontent.com/Norbyte/bg3se/af85fd2bd2be28646539060d45df487f4d3314b9/<path> into
+work/upstream/ (git-ignored) and hashed below. This closes DR-05 for the declarations listed here ONLY.
+It is a declaration reference, NOT a loaded-runtime probe: the SE build the game actually loads is unknown
+(cache holds v29/31/32/33). Every read the recorder makes stays guarded; absence becomes a recorded error.
+
+sha256 (fetched bytes)                                             path @ af85fd2
+c6b013d5449e7a1e7e99b5117c1d0170c1832bc699a240405d2c12f4bab8ad41 BG3Extender/Lua/Libs/IO.inl
+05531f2339376543b1366443037eac3ff87cb1ff8901d849818ec825251ad771 BG3Extender/Lua/Server/ServerEvents.h
+c361e45d6c48c445df0e5d514374406bdc270154337db5b3a564748fdab6a4dc BG3Extender/Lua/Server/FunctorEvents.inl
+f61be312eaa0801e2603934b4fa43c6d68113c811af54ccfc59449d97becd345 BG3Extender/GameDefinitions/Hit.h
+95f4f8153035c8d381008d26a061145d8df5915ce1eeb9bd05b51770405bf894 BG3Extender/GameDefinitions/Components/Data.h
+dc418781625ef9e85047ff7f260987ae30896d65ffd6d4261234b94ccae184d9 BG3Extender/GameDefinitions/Components/Status.h
+1ac273a74df0b6a2fdcb6c1c68e5b56002c5317bbab9a8ae960ac1a50c5612fa BG3Extender/GameDefinitions/Components/ActionResources.h
+4ab6b86c35132497f521268277ce86a1665abeffff92ec2bac4b31b384e47c9c BG3Extender/LuaScripts/Libs/Events/SubscribableEvent.lua
+d2fba883f0e530f8dc455ad28dee248981dd5a411593ba13c82c1f76f6dc6e1f BG3Extender/LuaScripts/Libs/Events/MissingSubscribableEvent.lua
+46fd83606523ed1eb1f6a4881cc40ae83b28964edf27adcc991892c60ee020e6 BG3Extender/LuaScripts/Libs/Events/EventManager.lua
+ce5e1971d1929cca1e593e6908d77c855e98bfee735c1b715b7e5dd9afd98a44 BG3Extender/Lua/Libs/ClientUI/Module.inl
+3c345cc4517a24470e71d006f63e13178e18563cf821344aecdf4447d44adb13 BG3Extender/Lua/Libs/Utils.inl
+3e35931bf4ca69071b81dc9c31959052ec0c48c7d4697f90e11e0b3d0df2f676 BG3Extender/Lua/Libs/Timer.inl
+1913a2d8f45fa77d6f4938176c42d7ae2757d232c333c11b2255b7eda471f977 BG3Extender/LuaScripts/BuiltinLibrary.lua
+8b4dc840bbec62a879478665d018a75e3288140a51ee8ff003eafa7bea805821 BG3Extender/Lua/Osiris/CallbackManager.inl
+
+What each pin establishes (declaration level) and how the recorder uses it
+- IO.inl: SaveFile(path, contents) -> bool; AppendFile(path, contents) -> bool (append=true); LoadFile(path) ->
+  optional string; both use the user-profile root. Recorder: an acknowledgement requires pcall success AND a
+  return of exactly true; nil/false/throw are failures. AppendFile is used only with WRITE_MODE="append",
+  APPEND_SEMANTICS_VERIFIED=true and a passing SaveFile/AppendFile/LoadFile self-test at load.
+- ServerEvents.h: DealDamageEvent{Functor, Caster, Target, Position, IsFromItem, SpellId, StoryActionId,
+  Originator, Hit, Attack(legacy DamageSums), HitWith, Caster2, SpellId2}; DealtDamageEvent adds Result
+  (HitResult*); BeforeDealDamageEvent has ONLY Hit and Attack; ExecuteFunctorEvent{Functor, Params};
+  AfterExecuteFunctorEvent{Functor, Params, Hit}. Recorder copies StoryActionId/Originator (DealDamage,
+  DealtDamage), Result (DealtDamage), and attributes BeforeDealDamage via Hit.Inflicter or "unattributed".
+- FunctorEvents.inl: DealtDamage's Result is the HitResult produced by the call (post), BeforeDealDamage fires
+  before the stats system applies it. Functor pre/post events exist; they do NOT establish miss/save coverage.
+- Hit.h: HitResult{Hit: HitDesc, Attack: AttackDesc, Results: HashMap<FunctorId,int32>, NumConditionRolls};
+  HitDesc scalar fields (TotalDamageDone, DeathType, DamageType, CauseType, ArmorAbsorption, LifeSteal,
+  EffectFlags, Inflicter, StoryActionId, HitWith, AttackRollAbility, SaveAbility, SpellAttackType,
+  ConditionRolls, SpellCastGuid, SpellId, StatusId, SpellSchool, AttackFlags, SpellLevel, SpellPowerLevel,
+  TotalHealDone, OriginalDamageValue, ...); ConditionRoll{RollType, Roll(variant), Difficulty, RollUuid,
+  SwappedSourceAndTarget, Ability, Skill}; AttackDesc{TotalDamageDone, TotalHealDone, DamageList}.
+  Recorder: copyResult() reads exactly these names, each guarded; unreadable ones go to result.missing.
+  Individual die values inside ConditionRoll.Roll (StatsRoll/variant) are NOT copied: variant access is not
+  pinned at the Lua binding level; the bounded legacy `hit` reflection may still contain them.
+- Components/Data.h HealthComponent{Hp, MaxHp, TemporaryHp, MaxTemporaryHp, ...}; Status.h
+  StatusContainerComponent{Statuses: HashMap<EntityHandle, FixedString>}; ActionResources.h
+  ActionResourcesComponent{Resources: HashMap<Guid, Array<ActionResourceEntry{ResourceUUID, Level, Amount,
+  MaxAmount, ...}>>}. Recorder: small dynamic checkpoints (dyn()).
+- EventManager.lua / SubscribableEvent.lua / MissingSubscribableEvent.lua: Ext.Events[name] returns a
+  MissingSubscribableEvent for unknown names, whose Subscribe logs an error and returns nil (no throw);
+  real Subscribe returns an integer id; Unsubscribe(id) exists for Ext.Events. Recorder: a hook counts as
+  registered only when Subscribe returned non-nil (the baseline reports "ok" for missing events).
+- ClientUI/Module.inl: Ext.UI.GetRoot errors outside a deferred context; Ext.UI.Defer(callback) queues a
+  Noesis-thread callback. Recorder: no direct UI access fallback; single-flight deferred polls.
+- Utils.inl: Ext.Utils.Version() (extension version int), GameVersion() ("v<maj>.<min>.<rev>.<build>"),
+  GenerateGuid(), HandleToInteger(EntityHandle) -> int64 (used as the status instance id; guarded).
+  LoadFile (IO.inl) is also used read-only as a collision probe before the first write of a session/stream:
+  its behaviour for a missing file (nil; any console noise) is a live gate (L-07). Timer.inl: MonotonicTime() (ms, steady_clock), MicrosecTime(), ClockEpoch() (s, wall).
+  BuiltinLibrary.lua: Ext.Utils.MonotonicTime is an alias of Ext.Timer.MonotonicTime.
+- Osiris/CallbackManager.inl: an internal Unsubscribe(SubscriptionId) exists. The cached v33 DLL contains the
+  string "UnregisterListener" (1 occurrence; string presence only). Its Lua signature/semantics were NOT
+  pinned, so the recorder never calls it and claims no hot unsubscribe (DR-01).
+
+Offline string presence in the cached v33 BG3ScriptExtender.dll (counts of ASCII names; presence is not
+proof of the Lua binding or of the loaded build): RegisterListener 11, UnregisterListener 1, AppendFile 1,
+SaveFile 3, Defer 24, GenerateGuid 1, DealtDamage 4, BeforeDealDamage 4, ExecuteFunctor 9,
+AfterExecuteFunctor 4, GameStateChanged 13, StoryActionId 4, Originator 11, MicrosecTime 7, LoadFile 2.
+
+Still unpinned / open (each is either guarded, disabled, or a live gate)
+- Osiris query multi-returns (Osi.GetPosition x,y,z; the recorder keeps every return) follow the documented
+  SE convention, not a pinned header here: live gate L-03 in docs/LIVE-CHECKLIST.txt.
+- GameStateChanged state names; whether Lua state survives a save load; client shutdown hooks: not pinned;
+  the recorder only records transitions and best-effort flushes, never relies on them for finality.
+- Enumeration/bitmask Lua representation (scalar() keeps .Label or tostring): not pinned.
+- Mapping of the historical chapel capture to any SE build: unavailable (reproducibility limitation).
+
+LV01 addendum (2026-10-23, Claude Opus 5.5, claude-opus-5-5): further files fetched read-only from the same
+af85fd2 raw URLs into work/upstream/ (git-ignored):
+7f37277caaa26a869af25a85b3f23fdb826f2925bcc2a432b456add1b7170a46 BG3Extender/Lua/Shared/Proxies/LuaEntityProxy.inl
+0eed249d1b613182f9b85760be9b3d6d406cac8506d62355d57c92b12a068b63 BG3Extender/Lua/Libs/Entity.inl
+7b4718d2ded5aa69693053c4823013037ce6c562036cde150eaec74cfd3f29a0 BG3Extender/GameDefinitions/Status.h
+564ba79f9d06b979104fbc461fc1721ab6d25ec9829b2e78c57d1e8f3804ad04 BG3Extender/GameDefinitions/Status.inl
+03cf1ca02e3223b5fed59aa2e642284d885af57f9162231a779e5a7d8f96ccb5 BG3Extender/Extender/Shared/Console.cpp
+64f3e43f37ce3e9f018f3ce5aa528e8d32351a4c345590b6c0415d9f395879cd BG3Extender/LuaScripts/SandboxStartup.lua
+- LuaEntityProxy.inl Index: a key in the entity property map that names a component returns the component, or
+  nil when GetRawComponent(handle, component) is null; an unknown key raises "Not a valid EntityProxy method or
+  component type". So e.StatusContainer == nil means the entity lacks eoc::status::ContainerComponent; it is
+  NOT a wrong field name. HasRawComponent(name) -> bool; GetAllComponentNames(requireMapped?) (nil = all).
+  The pinned source does NOT say when the engine adds/removes that component (lifecycle is engine behaviour).
+- Entity.inl GetAllEntitiesWithComponent(ExtComponentType) -> Array<EntityHandle> (used by the LV01 probe only).
+- Components/Status.h esv::status::StatusComponent (Lua "ServerStatus"){Entity, StatusHandle, StatusId, Type,
+  SpellCastSourceUuid}; esv::status::ActiveComponent tag. The probe validates "Entity = owner" empirically against
+  actors whose container is present; the header does not name the field's role.
+- Console.cpp: "server"/"client" switch context; "--[[" ... "]]--" lines form one multi-line command; "reset",
+  "reset server", "reset client" reset Lua (would destroy recorder state: never type them during capture).
+  SandboxStartup.lua: load = Ext.Utils.LoadString; dofile/loadfile disabled.
+- Components/Status.h esv::status::OwnershipComponent (Lua "ServerStatusOwnership"){EntityHandle Owner}: probe v2
+  candidate for the status bearer. Live probe v1 (lv01-status-1792760275.json) refuted ServerStatus.Entity as the
+  bearer (0/4 controls). Neither field's role is stated in the pinned source; only live controls can accept one.

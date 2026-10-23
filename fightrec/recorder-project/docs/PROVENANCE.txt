@@ -1,0 +1,37 @@
+PROVENANCE -- inspected 2026-10-23 (Asia/Nicosia)
+
+Target directory existed, was empty, and had no Git repository. No AGENTS.md was found at D:\AGENTS.md, D:\MyCode\AGENTS.md or in target. No existing work was overwritten.
+Installed path: C:\Users\John\AppData\Local\Larian Studios\Baldur's Gate 3\Script Extender\FightRec.lua
+FlightRec.lua did not exist at the supplied location. Exact verified name: FightRec.lua.
+Baseline size 33039 bytes; SHA256 a8a72fa165dae06df499821e04c2fc8e3199cc8f1ab96a1fbfd587fb772af4a9.
+Copied without editing into baseline/FightRec.lua. Same hash appears in retained intake review. This revised source postdates historical recording; authentic producer is unknown.
+
+External read-only evidence root: D:\MyCode\bg3 item mods\combat-sim\evidence
+chapel-runtime-intake-v150/raw/1792664924-fight04.jsonl SHA256 d8dfe3ac074f250895c4398ff6f276e3f54b3e6daa3d5a2ed8bd38bc641626a5
+chapel-runtime-intake-v150/raw/1792664927-combatlog.jsonl SHA256 8ed27f872a1361f211c9708c892fca44f67217054cbda7f2344ff1c50111a2bf
+chapel-runtime-intake-v150/raw/QuickSave_4.lsv SHA256 83c094884da39d5c5735bdc066b88450994f3c4c9dffa90ce5f645ec1f9ebf03
+chapel-runtime-intake-v150/raw/QuickSave_5.lsv SHA256 c25b5482456bf2782ae06ced5640f76c0e0003d22192bc1979d37aab0b87d9c9
+qualification.json SHA256 fd153f2959f7a6f701862488dce2b3296697622288eba689d19f7f034bc95df2
+chapel-comparison.json SHA256 2250e8e8de8918f70dba839997e3782b8f7f4a3f55147c4861077d844ca26ac5
+The two preceding files are under chapel-runtime-intake-v150/. Review and its earlier failed verification are retained verbatim in reviews/legacy/; they reference additional original artifacts outside this repository.
+
+Local SE cache contains 29,31,32,33 version folders and release manifest. Cached version 33 is NOT proof of currently loaded version. No runtime probe or game launch occurred.
+Claude CLI 2.1.289 exact-model no-tools probe returned MODEL_PROBE_OK with modelUsage key and canonicalModel claude-opus-5-5, provider firstParty, no permission denials. No unspecified opus alias used.
+
+Primary references checked 2026-10-23:
+https://raw.githubusercontent.com/Norbyte/bg3se/main/BG3Extender/Lua/Libs/IO.inl
+SaveFile returns bool; AppendFile is registered for Both and calls SaveExternalFile with append=true. Main branch is not the installed-runtime contract.
+https://github.com/Norbyte/bg3se/blob/main/BG3Extender/Lua/Server/ServerEvents.h
+https://github.com/Norbyte/bg3se/blob/main/BG3Extender/Lua/Server/FunctorEvents.inl
+Upstream defines DealtDamage.Result and functor pre/post payloads; this does not prove misses/save success coverage.
+https://github.com/Norbyte/bg3se/blob/main/Docs/API.md
+https://platform.claude.com/docs/en/models/overview
+Official Claude ID claude-opus-5-5; actual account availability additionally verified by probe above.
+Additional pinned API evidence:
+Cached v33 Version.txt identifies commit af85fd2bd2be28646539060d45df487f4d3314b9, 12 Oct 2026. The IO.inl at that exact commit was inspected and registers AppendFile returning bool. This links append capability to cached source identity, still not a loaded-runtime probe.
+https://raw.githubusercontent.com/Norbyte/bg3se/af85fd2bd2be28646539060d45df487f4d3314b9/BG3Extender/Lua/Libs/IO.inl
+Narrow raw read independently reproduced event counts in DESIGN and actual Hide/SneakAttack records; hashes for baseline and two raw logs were computed. Save hashes and qualification hashes above are retained-review pins, not all freshly rehashed in this session. Distinguish those evidence levels.
+
+Implementation model verification (2026-10-23, direct local session metadata):
+The sole transcript in C:\Users\John\.claude\projects\D--MyCode-BG3-control-bot is session18b32d47-c9e8-4ca3-bc43-7830daa51773.jsonl. A narrow extraction of actual unescaped model fields returned only claude-opus-5-5. Transcript content was not copied into Git or printed. This independently confirms the implementation session's actual model identity in addition to the initial account probe and explicit companion --model flag; no model substitution observed.
+Fresh hash checks in this session also recomputed BOTH retained .lsv save hashes, qualification.json and chapel-comparison.json, matching all retained provenance pins above. The earlier note that these were only retained-review pins describes the initial read stage, superseded by these later independent hash checks.

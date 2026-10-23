@@ -1,0 +1,86 @@
+Implementer dispositions for independent implementation review rounds 1, 2 and 3 -- 2026-10-23
+Author: Claude Opus 5.5 (claude-opus-5-5), implementer. The reviewer's files implementation-round-1.txt and
+implementation-round-2.txt and implementation-round-3.txt are kept verbatim (not edited, not committed by me). Severities below are the
+reviewer's. "Mutant" = tests/mutation_check.py re-introduces the defect into a temporary copy and the named
+regression fails on it while passing on the real file (final: 19/19 detected, 11 recorder + 8 validator).
+Final offline evidence after the source freeze: work/test-results/run-022.txt (71 Lua + 44 Python tests, stamp
+build/verify, stamped load, 19/19 mutants, baseline pin). Final benchmark: work/bench/full-010.json, bound by hash
+to the frozen sources. Frozen hashes: recorder 5c3ddbf610cd4f3654b924e0dab1efa8422046321f1ef39fff1bc5d46c3635a9,
+reassemble.py 82c93f3d1be7fa12b3a1aa353f31985e7aa40b0adb2c40e69af0b67cbe881755,
+stamp_build.py 9464ddfca01b860ec4f4e931fd5f8f34ba4f3ab6fc8a18f584062e05ca602bde.
+
+IR-01 P1 FIXED (r2: resolved). RESERVE_BYTES defaults to and is clamped to MINIMAL_MAX=1600 >= any minimal
+  terminal record (what<=40, kind<=64, error<=160 input bytes, escaped); a completion that would push retained
+  queue bytes past Q_MAX_BYTES + RECORD_HARD_MAX becomes a queue_bytes_exceeded terminal error. Documented bound:
+  retained queue bytes <= Q_MAX_BYTES + RECORD_HARD_MAX; active part <= PART_TARGET_BYTES + one record.
+  Test "IR-01 ..." (five nested large records reserved near the limit); mutant. mutation-001 showed my first
+  version of this test was too shallow to detect the defect; kept as evidence, test strengthened.
+IR-02 P1 FIXED (r2: resolved). Reservations keep their class; a required terminal error makes capture
+  "incomplete"; optional ones counted in terminal_errors_optional and tagged class=optional. Test; mutant.
+IR-03 P1 FIXED (r2: resolved). PARTS_INDEX_MAX (128) summaries kept, older counted (manifest parts_total,
+  parts_index_dropped); at most one dirty job (merged, deduplicated, <= participants) and one reconcile job
+  (skips counted). Tiny-part/fast-producer test; two mutants. Caveat (r2, no ID): name/stat caches grow with
+  distinct identities/prototypes U ever seen; memory bound statements now include O(U).
+IR-04 P1 FIXED (r2: resolved). stop() ends observation only; Tick keeps draining while any stream is open
+  (drain_calls), give-up check precedes backoff. Tests: stop during backoff with outstanding reservation ->
+  complete; permanent failure -> bounded abandonment. Mutant.
+IR-05 P1 FIXED WITH LIMITS (r2: resolved with limits). SOURCE_CONTENT_SHA256 = claimed hash of the UNSTAMPED
+  source, reported with status claimed_by_build_stamp_unverified_at_runtime or unknown; artifact hash printed
+  by tools/stamp_build.py, not computable at runtime. Unknown-identity re-execution is recorded as
+  reexecution_unverified and not activated. Tests: distinct unknown sources, edit-after-stamp detection,
+  stamped idempotence. No runtime authenticity proof exists.
+IR-06 P1 FIXED in two steps (r1 fix; r2 PARTIAL/BLOCKING -> fixed). Full GUID kept, no shared RNG reseeding,
+  session collision probe before any write (refuse when no GUID and no LoadFile). Round 2 defect: the stream
+  suffix loop could end on an occupied name. Now a stream checks base and -c2..-c9 at creation and, if all are
+  taken, is unwritable: writes nothing, refuses observations as loss, warns. Test prepopulates base + every
+  suffix and asserts all bytes unchanged; two mutants (r1 and r2 defects).
+  Round 3 residual (same-ID no-overwrite gate) FIXED: every new part path is checked before its first write;
+  an occupied path (e.g. orphan p00002 with p00001 absent) abandons the stream explicitly (unwritable, failed,
+  warning, later observations counted as loss) and leaves prior bytes untouched. Test "IR-06 round 3" checks every
+  preexisting file byte-for-byte; mutant "IR-06 r3". Limitation stated: single-writer check-then-write, not an
+  exclusive create; a concurrent external writer could race it.
+IR-07 P2 FIXED (r2: resolved). Enumeration stops at REFLECT_BUDGET in every reflect/vmdump loop (_omitted,
+  cut); Ext.Types.Serialize optional (REFLECT_USE_SERIALIZE) and flagged serialize_unbudgeted. Giant flat
+  table test; mutant. Live latency unknown.
+IR-08 P2 FIXED (r2: resolved coverage). Status entries {id, instance=HandleToInteger(status entity), turns}
+  sorted; source/cause stated as not captured; duplicate instances share Osiris per-id turns (stated).
+  Duration/expiry/duplicate test.
+IR-09 P1 FIXED (r2: resolved). A stalled accepted Defer keeps its slot; no further scheduling until it runs
+  (defer_stalled, defer_recovered). The round-0 test asserted the defective behaviour (two queued); it was
+  rewritten to assert <= 1 queued across 30 stall intervals; mutant.
+IR-10 P2 FIXED (r2: resolved). Movement anchor and delta bases advance only for committed records. Test; mutant.
+IR-11 P1 FIXED in two steps (r1 fix; r2 PARTIAL/BLOCKING -> fixed). Header identity consistency + file prefix
+  (r1); r2: required header fields/types validated (allowed unknowns: source "unknown", combat_id/fight absent),
+  records carrying envelope identity fields that differ from the header are rejected (envelope_overrides) and
+  merged output always takes identity from the checked header. Tests isolate the defect (trailer bytes/checksum
+  recomputed); two mutants.
+IR-12 P1 FIXED (r2: resolved). Order checked before sorting, non-prehistory obs inversions invalid, exact final
+  range. Tests (swap with endpoints, inversion, undershoot); two mutants.
+IR-13 P2 FIXED in two steps (r1 partial; r2 PARTIAL -> fixed). All consumed nested shapes validated: header,
+  trailer, checksum, record seq/kind/obs/prehistory, checkpoint data/actors/actor/base_seq, capture_gap data,
+  manifest parts list/entries; plus a structured safety net (validator internal error -> incomplete report).
+  Tests for kind=[], base_seq=[], actors str, actor int, data list, malformed capture_gap, manifest parts.
+  Round 3 legacy residual FIXED: a non-list snapshot "characters" is reported (malformed_snapshot_lines), never
+  iterated, and legacy import has the same structured safety net; test incl. the CLI path; mutant "IR-13 legacy".
+IR-14 P1 FIXED (r2: resolved). No overwrite of existing files without --overwrite; never onto inputs (path,
+  symlink, hard link), each other or protected sources; stamp tool likewise. Tests incl. hard link; mutant.
+IR-15 P3 FIXED (r2 PARTIAL -> fixed). Merged output is written stream by stream (no all-stream retention);
+  legacy input obeys --max-input-bytes; wording now "one stream at a time, O(largest stream), not bounded".
+IR-16 P2 FIXED (r2 follow-up: resolved; prose gate). Benchmark results embed sha256 of recorder, baseline, null control, bench, mock, json, runner and
+  a config snapshot. full-007/008/009 are labelled historical with their generating recorder hashes (39c34501,
+  512d459f, 0e84e2ae); the final run full-010 was taken once after the source freeze and the complete suite
+  (production writer code changed in round 3, so binding was required); report and README cite it.
+IR-17 P2 FIXED. Summaries report *_med_trial and *_max_all explicitly; UI search reports p50/max/n only.
+IR-18 P2 FIXED WITH LIMITS. Memory labelled whole-harness heap delta; null control recorder (same hooks, no work)
+  reported beside every cell; sampled peak labelled; timing arrays preallocated (full-run-006 found my
+  writer-only array still unallocated -> fixed in 007). No isolated-recorder allocation claim is made.
+IR-19 P2 FIXED. Writer-only comparison with identical pre-encoded lines and timeline: old (baseline writer
+  semantics re-implemented, encoding excluded) vs v2 Stream.
+IR-20 P1 NEW (r2) FIXED. Delta chains: base_seq must be a positive integer < own seq, the base must be an
+  accepted checkpoint holding the same actor, chains must end at a full anchor; full+base contradictory;
+  self/future/cycle/unanchored/absent-actor detected. Tests for each plus a valid multistep chain (and the
+  failed-anchor Lua case kept); two mutants. run-019 also exposed a bug in my own chain-depth metric
+  (memoized relative depths) -- fixed, test retained.
+
+Not claimed by any disposition: live SE compatibility, live performance, durability/atomicity, hot
+unsubscribe, full miss/save/RNG/AI coverage. Independent re-verification by the reviewer is still pending.

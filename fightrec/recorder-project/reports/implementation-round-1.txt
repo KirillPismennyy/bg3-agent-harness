@@ -1,0 +1,119 @@
+Implementation report -- recorder core v2 -- 2026-10-23
+Implementer: Claude Opus 5.5. The harness reports this session's model as Opus 5.5 with exact ID
+claude-opus-5-5; no separate in-session runtime metadata probe was run (the account probe is in
+docs/PROVENANCE.txt). All executable code in recorder/, tests/, tools/ and bench/ was written in this session
+by this model; no other coding agents were used. Prose inputs (README, DESIGN v1.1, HANDOFF, design reviews) and
+the independent implementation reviews (reviews/implementation-round-1.txt, -round-2.txt) are by Codex.
+
+Inputs read: README.txt, docs/PROVENANCE.txt, docs/DESIGN.txt v1.1 (incl. section 9), docs/HANDOFF.txt,
+reviews/design-round-1.txt (round 2 cleared prose blockers), reviews/legacy/*.json (both kept verbatim).
+baseline/FightRec.lua is unchanged (sha256 a8a72fa1...af4a9, checked by tests/run_all.py on every run).
+No game launch, deployment, AppData/game/save/settings edit, upload or message. The combat-sim tree was only
+READ: one retained raw capture (fight04, pinned hash verified) by the legacy-import test. Network use: pip
+install lupa (into work/venv) and read-only GETs of upstream SE source at the pinned commit (docs/API-PINS.txt).
+
+Deliverables
+  recorder/FightRec.lua          v2 recorder (server + client), derived from the baseline
+  tests/mock_se.lua json.lua partreader.lua harness.lua    fake SE (pinned declarations only) + helpers
+  tests/test_recorder.lua        71 Lua cases;  tests/test_reassemble.py 44 Python cases
+  tests/mutation_check.py        19 mutants (11 recorder, 8 validator) re-introducing fixed review defects
+  tests/test_stamped.lua check_syntax.lua run_all.py       stamped-artifact, syntax, one-command runner
+  tools/reassemble.py            read-only part reassembly/validation + legacy import (no simulator import)
+  tools/stamp_build.py           build content identity stamping/verification of a deployable copy
+  tools/lua54.py                 Lua 5.4 host runner (lupa)
+  bench/bench.lua bench/null_recorder.lua bench/summarize.py   benchmark, control, table renderer;
+                                 reports/benchmark-2026-10-23.txt
+  docs/API-PINS.txt SCHEMA.txt LIVE-CHECKLIST.txt; README.txt updated; reviews/implementation-dispositions.txt
+
+Acceptance requirement -> implementation -> offline evidence (tests named as in test_recorder.lua)
+- DR-01 generation ownership: own global FightRecV2 + FightRec2/ namespace; identity = version|claimed source
+  content hash|config fingerprint; baseline FightRec.registered => refuse (baseline state untouched); same claimed
+  identity => idempotent; unknown identity re-execution => reexecution_unverified, not activated; different
+  identity => refused (no verified Osiris unsubscribe: lifecycle reset); callbacks gated on generation.active;
+  stop() ends observation while Tick drains to completion. Tests: re-execution, refusal, baseline-then-v2,
+  stopped generation, IR-04, IR-05, test_stamped.lua.
+- DR-02 terminal reservations: admission (records and bytes; reservation 1600 B >= any terminal record) before a
+  seq exists; refused admissions -> capture_gap + INCOMPLETE + one warning; exactly one terminal state per seq;
+  required terminal errors => incomplete; protected builder/commit; contiguous-prefix drain; finalization waits,
+  then converts pending reservations; emergency latch; nesting limit; retained queue bytes <= Q_MAX_BYTES +
+  RECORD_HARD_MAX. Tests: nesting, builder/encode/emergency errors, nesting limit, pending reservation,
+  saturation identity (recorded + lost = fired), degradation, IR-01, IR-02.
+- DR-03 prep identity: obs at callback entry, original t kept, prehistory=true copies with contiguous per-fight
+  seq, eviction window/count/reasons recorded. Tests: both prehistory cases.
+- DR-04 cost model: measured (benchmark slopes ~2 vs ~1).
+- DR-05 pins: docs/API-PINS.txt (af85fd2). Optional functor hooks remain disabled by default.
+- Writer: numbered parts, SaveFile fallback rewrites only the active part, seal at C, oversized dedicated parts,
+  hard max -> explicit error, ack = pcall ok AND return true, retained retry with bounded backoff, recovery
+  record, optional append gated by attestation + self-test + read-back recovery/rotation, manifest once with a
+  bounded part index, never overwriting existing files (session probe, stream suffixes, explicit failure).
+- XYZ multi-return, never zeros; DealtDamage.Result copy with provenance/missing map and no retained engine
+  objects (lifetime-expiring mocks + reachability scan); BeforeDealDamage unattributed scope; small dynamic
+  checkpoints (full anchors, commit-gated deltas, status instance/turns, deferred labels, non-atomic, bounded
+  jobs); movement default off with commit-gated anchor; UI single-flight that never accumulates, Defer
+  missing/throwing/stalled, backlog, rebuild/ambiguity, budget flags.
+- Legacy boundary: same event names/fields/counts as the baseline under one workload; legacy importer; external
+  fight04 import counts equal DESIGN section 1 (637 records, 42/42 turns, 45/35 spells, 26x3 damage, 114/93
+  status, 9 rolls, 2 snapshots), all positions X-only.
+
+TEST RUN HISTORY (raw logs work/test-results/run-NNN.txt and mutation-NNN.txt, git-ignored; failures kept)
+pre-001  0 cases ran: tools/lua54.py put the script in arg[1]; fixed to the arg[0] convention.
+run-001  18 pass / 38 fail. Mock defect: Osiris accepts "Name_<uuid>" and bare "<uuid>"; the mock keyed by the
+         full string, so no fight started. Mock now resolves both.
+run-002  52 / 4 fail, test-design defects, tests kept and corrected: T-01 a 5000-byte RECORD_HARD_MAX also turns
+         the full snapshot into an explicit error (observation: small hard caps sacrifice snapshots); T-02
+         degradation test drove the queue full so the required event was refused first; T-03 deterministic mock
+         GUID gave two worlds one session id; T-04 movement counted before a flush.
+run-003..004  56/56, 57/57 (+checksum) with dumps.   run-005/006 Python test file broken by shell escaping in my
+         patch tooling; run-008 identical re-run (patch aborted).   run-007 Python tests assumed record layout
+         of part 1 (oversized meta alone under small caps); fixed.   run-009..011 all pass (pre-review).
+--- independent review round 1 (19 findings) ---
+run-012  67/69: an old test expected the removed RNG label; IR-01 test captured while the queue was full (refused
+         at admission, no seq). run-013 identical re-run (shell escaping again).  run-014 69/69.
+mutation-001  IR-01 regression NOT detecting its defect (too shallow) -> strengthened; mutation-002 9/9.
+run-015  Python IR-11 splice test proved nothing (both dumps share the deterministic mock session) -> spliced a
+         genuinely different stream.  run-016/017 all pass.
+--- independent review round 2 (IR-06/IR-11/IR-13/IR-15 residuals, new IR-20) ---
+run-018  70/70 Lua; mutation-003 11/11.   run-019 Python 2 fail: an IR-13 predicate matched no record (test bug);
+         IR-20 valid-chain test exposed my memoized chain-depth metric under-reporting (validator bug, fixed).
+mutation-004  17/17 detected (incl. 7 validator mutants).   run-020 ALL OFFLINE CHECKS PASSED.
+run-021  after adding collision_check to the capabilities record (+1 assertion): ALL OFFLINE CHECKS PASSED
+         incl. 17/17 mutants (recorder 0e84e2ae...; benchmark full-009, now historical).
+--- independent review round 3 (IR-06 orphan part gate, IR-13 legacy shape) ---
+run-022  after both corrections and the source freeze: ALL OFFLINE CHECKS PASSED -- 71 Lua, 44 Python, stamp
+         build/verify, stamped load, 19/19 mutants, baseline pin (final; recorder 5c3ddbf6...). Benchmark bound
+         once afterwards as full-010.
+
+REVIEW FINDINGS
+Self-review before the independent review (CR-01..CR-09, B-01, M-01..M-03; none deleted):
+CR-01 P3 write-mode hack -> construction field. CR-02 P2 FINISH_GIVEUP unreachable during backoff -> fixed, test.
+CR-03 P2 %d on non-integer time in the terminal path -> int(). CR-04 P3 part-number gap -> freshPart().
+CR-05 P3 stop() left the session open -> fixed. CR-06 P3 abandoned reservations lost obs/kind -> kept, test.
+CR-07 P3 silent manifest failure -> warning, test. CR-08 P3 prehistory queue age -> storage time.
+CR-09 P2 pinned MissingSubscribableEvent returns nil: baseline "ok" can mislabel a missing hook -> v2 needs an id.
+B-01 P2 checkpoint volume -> deltas. M-01..M-03 benchmark methodology -> fixed (see benchmark report).
+Independent review rounds 1-3 (IR-01..IR-20): every finding and its disposition, tests and mutants are in
+reviews/implementation-dispositions.txt. Reviewer files are kept verbatim and left uncommitted for the parent. Final
+independent verification of the frozen candidate is still pending.
+
+OPEN LIMITATIONS / GATES (not fixed; explicit)
+- No live run: SE version loaded, API behaviour (multi-return GetPosition, enum representation, AppendFile and
+  LoadFile semantics incl. missing-file behaviour of the collision probe, HandleToInteger, Defer timing, object
+  lifetimes), coverage and cost are all unverified (docs/LIVE-CHECKLIST.txt).
+- Append mode exists but is off; needs W-03 live scratch verification before APPEND_SEMANTICS_VERIFIED=true.
+- No hot unsubscribe: replacing a generation requires a Lua lifecycle reset; a baseline loaded AFTER v2 in the
+  same Lua state cannot be prevented by v2.
+- No durability/atomicity guarantee: active part, append tail and queue are lost on crash/reset; SaveFile
+  rewrite is not atomic. Session and client combatlog streams have no validated final flush hook.
+- Seals/flushes are synchronous in Tick (bounded by C + one record); start/end snapshots and the GameStateChanged
+  flush run inside callbacks. Bounded is not a frame-time guarantee. Host-disk single-tick maxima up to 571 ms
+  (v2) and 101 ms (baseline) were observed offline, cause undetermined (live gate T-03).
+- No-overwrite is a single-writer check-then-write (LoadFile probe), not an exclusive create.
+- Overlapping party combats share one stream (scope_transition, unsupported). Name/stat caches grow with distinct
+  identities (O(U)).
+- Defaults cost more than the baseline in bytes on disk (~3.4x synthetic), host CPU per event and allocation at
+  small E; checkpoint cadence untuned.
+- Dice: individual die values inside ConditionRoll.Roll not copied in the pinned Result copy; RollResult is not
+  a numerical stream. Status source/cause not captured. No full miss/save/RNG/AI coverage.
+- Experimental functor capture: minimal, disabled by default, not production-enabled.
+- Validator memory O(largest stream), not bounded; legacy XYZ unrecoverable; historical producer unknown.
+- Source identity: a stamp is a build-time claim; artifact hash must be recorded externally.
