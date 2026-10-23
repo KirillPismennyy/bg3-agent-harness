@@ -107,13 +107,20 @@ def complete_damage_evidence(value):
         for item in value:complete_damage_evidence(item)
     else:require(value not in ("<omitted>","<budget>"),"Damage evidence contains omitted value")
 
-def verify_bridge(bridge):
+def verify_bridge(bridge,expected_sha=SIMULATOR_SHA):
     require(bridge.is_file(),"Replay bridge is missing; rebuild with explicit SimulatorAssembly before launching dotnet")
     simulator=bridge.with_name("bg3sim.dll")
     require(simulator.is_file(),"Adjacent simulator DLL is missing; dotnet was not launched")
     digest=sha(simulator.read_bytes())
-    require(digest==SIMULATOR_SHA,"Adjacent simulator DLL hash mismatch; dotnet was not launched")
+    require(digest==expected_sha,"Adjacent simulator DLL hash mismatch; dotnet was not launched")
     return {"bridgeSha256":sha(bridge.read_bytes()),"simulatorSha256":digest,"verifiedBeforeProcessLaunch":True}
+
+def runtime_selection(adapter_path=None,simulator_sha256=None):
+    require(simulator_sha256 is None or adapter_path is not None,"An explicit simulator hash requires --adapter; no implicit runtime replacement")
+    expected=SIMULATOR_SHA if simulator_sha256 is None else simulator_sha256
+    require(isinstance(expected,str) and len(expected)==64 and all(c in "0123456789abcdef" for c in expected),"Simulator SHA256 must be 64 lowercase hex characters")
+    bridge=Path(adapter_path).resolve() if adapter_path is not None else (HERE/"replay_adapter/bin/Release/net8.0/TrialReplay.dll").resolve()
+    return bridge,{"selection":"default-pinned" if adapter_path is None else "explicit-adapter","adapterPath":str(bridge),"expectedSimulatorSha256":expected}
 
 class Intake:
     def __init__(self,trial,profile):
@@ -494,7 +501,8 @@ def compare(intake,payload,actual,profile):
     check("damage.total",action["result"]["total_damage"],sum(actual_damage.values()),"total damage is separate from the typed comparison")
     return comparisons,{"actor":receipt,"target":target_receipt,"actorResourceFieldSourceAgeMs":actor_field_age,"targetResourceFieldSourceAgeMs":target_field_age,"actorStatusEvidence":after_status_receipt,"targetStatusEvidence":target_after_status_receipt}
 
-def run(trial,profile_path,output):
+def run(trial,profile_path,output,*,adapter_path=None,simulator_sha256=None):
+    bridge,selection=runtime_selection(adapter_path,simulator_sha256)
     require(trial.is_dir(),"Explicit trial directory does not exist")
     require(not output.resolve().is_relative_to(trial.resolve()),"Outputs must not modify the immutable trial")
     require(not output.exists(),"Output directory must be new")
@@ -502,17 +510,18 @@ def run(trial,profile_path,output):
     profile=load_profile(profile_path)
     intake=Intake(trial,profile);before,_=intake.verify()
     payload,qualification=request(intake,before,profile)
+    qualification["runtimeSelection"]=selection
     if payload is None:
         qualification["receipts"]=intake.receipts;(output/"report.json").write_bytes(encoded(qualification));return qualification
+    payload["simulatorSha256"]=selection["expectedSimulatorSha256"]
     payload_path=output/"operands.json";payload_path.write_bytes(encoded(payload))
-    bridge=HERE/"replay_adapter/bin/Release/net8.0/TrialReplay.dll"
-    bridge_receipt=verify_bridge(bridge)
+    bridge_receipt=verify_bridge(bridge,selection["expectedSimulatorSha256"])
     completed=subprocess.run(["dotnet",str(bridge),str(payload_path)],capture_output=True,text=True,timeout=60)
     (output/"adapter.stdout.json").write_text(completed.stdout,encoding="utf-8");(output/"adapter.stderr.txt").write_text(completed.stderr,encoding="utf-8")
     require(completed.returncode==0,"Observed action adapter refused: "+completed.stderr)
     actual=json.loads(completed.stdout)
     require(sha(bridge.read_bytes())==bridge_receipt["bridgeSha256"],"Bridge binary changed during invocation")
-    require(actual["requestSha256"]==sha(payload_path.read_bytes()) and actual["simulatorSha256"]==SIMULATOR_SHA and actual["api"]=="BattleEngine.ExecuteObservedAction","API execution receipt mismatch")
+    require(actual["requestSha256"]==sha(payload_path.read_bytes()) and actual["simulatorSha256"]==selection["expectedSimulatorSha256"] and actual["api"]=="BattleEngine.ExecuteObservedAction","API execution receipt mismatch")
     comparisons,post_cp=compare(intake,payload,actual,profile)
     mismatches=[x for x in comparisons if not x["matched"] and x["kind"]!="coverage-exclusion"]
     exclusions=[x for x in comparisons if x["kind"]=="coverage-exclusion"]
@@ -521,9 +530,11 @@ def run(trial,profile_path,output):
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument("trial",type=Path);parser.add_argument("--profile",type=Path);parser.add_argument("--output",type=Path,required=True)
+    parser.add_argument("--adapter",type=Path,help="Explicit built adapter DLL; simulator DLL must be adjacent")
+    parser.add_argument("--simulator-sha256",help="Exact lowercase SHA256 for the selected simulator; requires --adapter")
     args=parser.parse_args()
     try:
-        report=run(args.trial,args.profile,args.output)
+        report=run(args.trial,args.profile,args.output,adapter_path=args.adapter,simulator_sha256=args.simulator_sha256)
         print(json.dumps({"status":report["status"],"engineInvoked":report["engineInvoked"],"report":str((args.output/"report.json").resolve()),"mismatchCount":len(report.get("mismatches",[]))}))
         return 2 if report["status"]=="refused" else 3 if report["status"]=="scalar_mismatch" else 0
     except Exception as error:

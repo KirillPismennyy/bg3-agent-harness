@@ -4,7 +4,7 @@ Build with .NET8 and an explicitly selected simulator assembly:
 dotnet restore fightbot/replay_adapter/TrialReplay.csproj --configfile fightbot/replay_adapter/NuGet.Config
 dotnet build fightbot/replay_adapter/TrialReplay.csproj -c Release --no-restore -p:SimulatorAssembly=/absolute/path/to/bg3sim.dll
 
-Required simulator SHA256:
+Default simulator SHA256:
 94f7ef46cd62dd698df08a986f5b99e6fbda804ad1b61a00ce6d7768e0de9bba
 Python checks bridge presence and adjacent simulator bytes BEFORE launching dotnet;
 the bridge repeats the simulator/rules hash checks inside its caught entrypoint.
@@ -71,6 +71,7 @@ Only these reviewed source paths belong in the repository:
 fightbot/replay_trial.py
 fightbot/tests/test_replay_trial.py
 fightbot/tests/test_status_intake.py
+fightbot/tests/test_runtime_selection.py
 fightbot/replay_adapter/Program.cs
 fightbot/replay_adapter/TrialReplay.csproj
 fightbot/replay_adapter/NuGet.Config
@@ -82,3 +83,24 @@ Rows must be explicit JSON arrays; an empty object is refused even with count ze
 Tests named SyntheticFacetIntegration inject synthetic facets into an existing immutable native trial in memory. They exercise the actual pinned BattleEngine.ExecuteObservedAction API, not a new native capture. The original retained capture remains a separate 27-match/two-exclusion regression. Strict mode still refuses remaining scene/build/reaction/geometry/RNG and ownership-completeness gaps; native fresh-facet validation is pending.
 
 Each absent actor facet, BEFORE or AFTER independently, requires controlled.acceptStaleStatusProbe=true before legacy probe access. A fresh BEFORE facet does not authorize stale AFTER fallback. Fresh AFTER target rows are retained verbatim in postRawCheckpoints.targetStatusEvidence.rows, including inactive tags, exact instance strings and optional unqualified lifetime envelopes; they remain excluded from target mechanical simulation.
+
+Explicit runtime selection
+Default runs retain the original simulator pin. To test another reviewed frozen
+runtime, build a separate adapter against that copied DLL, then pass BOTH
+--adapter /absolute/path/to/TrialReplay.dll and --simulator-sha256 EXACT_LOWERCASE_SHA256.
+No newest-file or shared-build lookup occurs. Relative adapter paths resolve
+against the caller working directory. --adapter alone retains the default hash;
+an explicit hash without an explicit adapter is refused. No installation or
+shared source/build mutation is performed.
+The selected hash is used by prelaunch adjacent-DLL verification, the immutable
+operand request and the inside-process loaded-assembly receipt check. Reports
+retain the selected adapter path, expected hash and observed binary hashes.
+Selecting a hash proves identity, not API compatibility or fidelity. Validate
+the owner-provided snapshot and rerun the same capture before adopting a pin.
+Strict input refusal still returns before invoking either runtime.
+Runtime controls: python -m unittest discover -s fightbot/tests -p test_runtime_selection.py -v
+Four fixture-independent controls run by default. Four paired actual-API controls
+require the existing private trial/profile environment settings plus an explicit
+BG3_REPLAY_TEST_V206_ADAPTER path; unavailable private fixtures visibly skip.
+Configured invalid paths/pins fail. v206 controls reuse the immutable native
+FireBolt trial and preserve its two declared target-status exclusions.
