@@ -25,3 +25,20 @@ Offline staged tests (no game connection):
 Thirteen tests pass: successful bounded observation/path/hash handoff, essential read failure, token change, no retry after uncertain action, post-generation change, refusal retention, finite flush validation, immutable unique directories, numerical arm/stop and both evidence roots, persistent post-arm write failure cleanup, and partial arm failure cleanup. The command was live-qualified on both a no-line-of-sight refusal and an executed entangled Fire Bolt; complete simulator-scene admission remains unverified.
 
 The final post-snapshot readiness check detects a client/session change after the server sample. Snapshot native.raw_resource_amounts preserves unrounded guard pool values; these are distinct from status-masked usable resources. stdout/logging returns a compact index of paths, hashes, requested candidates and errors; full native evidence stays in the immutable report on disk. A candidate index is not a replay acceptance decision.
+
+Both native.actor and native.target now include raw_resource_entries, a separately
+qualified read of ActionResources.Resources: resource UUID, entry index, level,
+unrounded amount and maximum amount. This preserves raw pools independently of
+usable movement masking. A missing component, getter/iteration failure, invalid
+number or incomplete row makes the entire resource facet unknown; no partial
+rows or replacement zeros are published. Other native HP/position facts remain
+available. Resource availability is not itself a new action/admission gate.
+These fields apply only to new captures; old checkpoint-derived pools retain
+their original timing qualifications. No game-runtime validation is claimed.
+
+Five optional generated-Lua tests live in tests/test_snapshot_pools.py. Run them
+with a Python environment containing lupa.lua54; without it unittest explicitly
+reports five skips. They exercise the actual generated Lua, zero/unrounded pools,
+missing/partial reads and nonfinite values. Independent two-round review also
+checked strict JSON serialization and late getter/iteration faults. Existing
+trial capture tests still run without Lupa.

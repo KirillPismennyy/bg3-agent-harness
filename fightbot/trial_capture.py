@@ -42,6 +42,23 @@ local function exact(u,book)
  for i=1,3 do assert(type(p[i])=="number","native position unavailable") end
  assert(type(e.Health.Hp)=="number","native HP unavailable")
  local out={uuid=u,pos={p[1],p[2],p[3]},vertical_y=p[2],hp=e.Health.Hp,max_hp=e.Health.MaxHp,temp_hp=e.Health.TemporaryHp}
+ out.raw_resource_entries=read(function()
+  local ar=assert(e.ActionResources,"ActionResources component unavailable")
+  local rows={}
+  local function finite(value)
+   return type(value)=="number" and value==value and value~=math.huge and value~=-math.huge
+  end
+  for resource_uuid,list in pairs(ar.Resources) do
+   for index,r in ipairs(list) do
+    assert(finite(r.Amount) and finite(r.MaxAmount) and math.type(r.Level)=="integer",
+     "resource pool fields unavailable")
+    rows[#rows+1]={resource_uuid=tostring(resource_uuid),entry_index=index,
+     level=r.Level,amount=r.Amount,max_amount=r.MaxAmount}
+   end
+  end
+  return {rows=rows,count=#rows,precision="unrounded",
+   source="ActionResources.Resources Amount/MaxAmount/Level; no usable-movement projection"}
+ end)
  if book then
   out.actor_default_ability=tostring(e.Stats.SpellCastingAbility)
   out.raw_resource_amounts=read(function()return BG3AI.Guard.resources(u)end)
