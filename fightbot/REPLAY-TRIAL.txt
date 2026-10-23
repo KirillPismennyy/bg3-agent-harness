@@ -70,7 +70,15 @@ Do not commit private profiles, raw captures, outputs, bin/obj, or caches.
 Only these reviewed source paths belong in the repository:
 fightbot/replay_trial.py
 fightbot/tests/test_replay_trial.py
+fightbot/tests/test_status_intake.py
 fightbot/replay_adapter/Program.cs
 fightbot/replay_adapter/TrialReplay.csproj
 fightbot/replay_adapter/NuGet.Config
 fightbot/REPLAY-TRIAL.txt
+
+Fresh container-listed status intake (offline controls; native validation pending)
+The optional controlled.acceptContainerListedStatusProjection flag must be exactly true to consume present native actor/target status_container_entries. This admits an explicitly incomplete listed-instance projection, not global ownership completeness or status absence. Missing/failed/malformed present facets refuse; only an absent key permits legacy evidence. Fresh actor entries must be active and match qualified checkpoint identities; inactive entries refuse rather than becoming active. Fresh target entries, including active=false, remain retained exclusion evidence and must match excludedTargetStatusMechanics. Lifecycle raw values never become source or remaining turns. BEFORE facets are validated before engine launch; AFTER facets are read only during comparison after the API receipt. Unused external status probe files are not opened.
+Rows must be explicit JSON arrays; an empty object is refused even with count zero until native serialization is qualified. Decimal int64 handle strings remain exact. Fresh sequential inventory timestamps must lie within their callback; no atomic/global completeness claim follows.
+Tests named SyntheticFacetIntegration inject synthetic facets into an existing immutable native trial in memory. They exercise the actual pinned BattleEngine.ExecuteObservedAction API, not a new native capture. The original retained capture remains a separate 27-match/two-exclusion regression. Strict mode still refuses remaining scene/build/reaction/geometry/RNG and ownership-completeness gaps; native fresh-facet validation is pending.
+
+Each absent actor facet, BEFORE or AFTER independently, requires controlled.acceptStaleStatusProbe=true before legacy probe access. A fresh BEFORE facet does not authorize stale AFTER fallback. Fresh AFTER target rows are retained verbatim in postRawCheckpoints.targetStatusEvidence.rows, including inactive tags, exact instance strings and optional unqualified lifetime envelopes; they remain excluded from target mechanical simulation.

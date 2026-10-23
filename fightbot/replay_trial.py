@@ -243,7 +243,8 @@ def load_profile(path):
     require(set(value)==allowed and value["schema"]==1 and value["mode"]=="conditional","Unsupported profile schema or unexpected/oracle field")
     require(value["randomInputMode"]=="selected-d20-result-seam","Explicit post-selection d20 seam qualification required; no ordered face pair is inferred")
     allowed_control={"geometry","buildProjection","excludedTargetStatusMechanics","acceptDeferredCheckpoint","acceptStaleStatusProbe","actorExtraAttacks","actorUsedThisTurn","actorAwaitingRecharge","targetUnknownState"}
-    require(set(value["controlled"])==allowed_control,"Unexpected controlled field, including observed/oracle overrides")
+    require(allowed_control<=set(value["controlled"])<=allowed_control|{"acceptContainerListedStatusProjection"},"Unexpected controlled field, including observed/oracle overrides")
+    if "acceptContainerListedStatusProjection" in value["controlled"]:require(value["controlled"]["acceptContainerListedStatusProjection"] is True,"Container-listed status projection opt-in must be exactly true")
     require(set(value["timingLimits"])=={"maxPreCheckpointAgeMs","maxBeforeStatusProbeAgeMs","maxAfterStatusProbeAgeMs","maxPostCheckpointAgeMs","maxBeforeActorResourceFieldSourceAgeMs","maxBeforeTargetResourceFieldSourceAgeMs","maxAfterActorResourceFieldSourceAgeMs","maxAfterTargetResourceFieldSourceAgeMs"} and all(type(v) is int and v>=0 for v in value["timingLimits"].values()),"Explicit finite checkpoint AND before/after consumed resource field-source staleness limits required")
     for record in (value["rules"],value["resourceDefinitions"],value["statusBefore"],value["statusAfter"]):
         require(set(record)=={"path","sha256"},"Malformed hash-bound external evidence")
@@ -264,6 +265,64 @@ def status_probe(intake,record,uuid,checkpoint_statuses,phase="before",boundary_
     expected=sorted((x["id"],str(x["instance"])) for x in checkpoint_statuses)
     require(actual==expected,"Status probe/checkpoint identity mismatch")
     return actor["owned"],{"probeTimeMs":value["t_ms"],"probeAgeAtBeforeMs":intake.before["started_ms"]-value["t_ms"],"qualification":"separate non-atomic ownership probe; combat+monotonic+checkpoint instance identity crosscheck; probe does not record session/hash"}
+
+def decimal_handle(value):
+    require(isinstance(value,str),"Status handle must be an exact decimal string")
+    try:number=int(value)
+    except (ValueError,TypeError):raise Refusal("Status handle must be a canonical decimal int64 string")
+    require(str(number)==value and number!=0 and -(1<<63)<=number<(1<<63),"Status handle must be a canonical nonzero decimal int64 string")
+    return value
+
+def fresh_status_entries(snapshot,role):
+    """Listed container evidence only; never global absence or lifecycle semantics.
+    None means the KEY was absent. Present failed/malformed facets always refuse.
+    """
+    native=snapshot["native"][role]
+    if "status_container_entries" not in native:return None
+    facet=native["status_container_entries"]
+    require(isinstance(facet,dict) and facet.get("ok") is True and not facet.get("error"),"Present status_container_entries facet failed/malformed; no stale fallback")
+    value=facet.get("result")
+    require(isinstance(value,dict) and isinstance(value.get("rows"),list),"Status rows must be an explicit JSON array; no stale fallback or unqualified empty-object conversion")
+    rows=value["rows"]
+    require(type(value.get("count")) is int and 0<=value["count"]==len(rows)<=4096,"Status count invalid or inconsistent")
+    require(value.get("owner_uuid")==native["uuid"],"Status owner UUID mismatch")
+    owner=decimal_handle(value.get("owner_handle"))
+    require(all(type(snapshot.get(k)) is int for k in ("started_ms","finished_ms")) and all(type(value.get(k)) is int for k in ("begin_ms","end_ms")),"Status callback/facet timing missing or malformed")
+    require(0<=snapshot["started_ms"]<=value["begin_ms"]<=value["end_ms"]<=snapshot["finished_ms"],"Status facet interval outside callback")
+    require(value.get("source")=="StatusContainer.Statuses + ServerStatus + ServerStatusOwnership.Owner" and value.get("coverage")=="present-container-entries-only" and all(value.get(k) is False for k in ("global_scan_performed","absence_proven","lifecycle_semantics_qualified")),"Status coverage/source contract is unqualified")
+    seen=set()
+    for row in rows:
+        require(isinstance(row,dict) and isinstance(row.get("id"),str) and bool(row["id"]) and isinstance(row.get("type"),str) and bool(row["type"]) and type(row.get("active")) is bool,"Malformed status identity/type/active row")
+        instance=decimal_handle(row.get("instance"))
+        require(instance not in seen,"Duplicate status instance")
+        seen.add(instance)
+        require(decimal_handle(row.get("owner_handle"))==owner,"Status row owner handle mismatch")
+        if "lifetime" in row:
+            lifetime=row["lifetime"]
+            require(isinstance(lifetime,dict) and type(lifetime.get("ok")) is bool,"Malformed optional raw status lifetime envelope")
+            if lifetime["ok"]:
+                raw=lifetime.get("result")
+                require(isinstance(raw,dict) and type(raw.get("component_present")) is bool,"Malformed optional raw status lifetime result")
+                if raw["component_present"]:
+                    require(raw.get("units")=="unqualified" and type(raw.get("raw_value")) in (int,float) and math.isfinite(raw["raw_value"]),"Invalid unqualified raw status lifetime")
+    return rows,{"source":"native."+role+".status_container_entries","beginMs":value["begin_ms"],"endMs":value["end_ms"],"ownerUuid":native["uuid"],"ownerHandle":owner,"coverage":value["coverage"],"globalOwnershipCompleteness":"unproven","absenceProven":False,"lifecycleSemanticsQualified":False,"qualification":"Fresh sequential callback listed-instance evidence only; no global ownership completeness, absence, source, remaining-turn or lifecycle semantics established."}
+
+def status_evidence(intake,snapshot,role,checkpoint,phase,profile):
+    fresh=fresh_status_entries(snapshot,role)
+    if fresh is None:
+        if role=="target":
+            projection=one([x for x in snapshot["turn_order"] if x["uuid"]==snapshot["native"][role]["uuid"]],phase+" target status projection")
+            return projection["statuses"],{"source":"legacy-target-status-projection","coverage":"projection-only","globalOwnershipCompleteness":"unproven"}
+        require(profile["controlled"]["acceptStaleStatusProbe"] is True,"Legacy "+phase+" actor status evidence requires explicit acceptStaleStatusProbe=true")
+        return status_probe(intake,profile["statusBefore" if phase=="before" else "statusAfter"],snapshot["native"][role]["uuid"],checkpoint["statuses"],phase=phase,boundary_ms=snapshot["started_ms"] if phase=="before" else snapshot["finished_ms"])
+    rows,receipt=fresh
+    receipt["rows"]=rows
+    require(profile["controlled"].get("acceptContainerListedStatusProjection") is True,"Fresh status container coverage requires explicit conditional acceptContainerListedStatusProjection seam")
+    if role=="actor":
+        require(all(x["active"] is True for x in rows),"Inactive listed actor status cannot be silently dropped or imported as active")
+        require(sorted((x["id"],x["instance"]) for x in rows)==sorted((x["id"],str(x["instance"])) for x in checkpoint["statuses"]),"Fresh status/checkpoint identity mismatch; stale identities cannot silently replace fresh observation")
+        receipt["checkpointCrosscheck"]="Identity match only; checkpoint and callback are separate non-atomic observations and do not prove global completeness."
+    return rows,receipt
 
 def resource_rows(native,checkpoint):
     if "raw_resource_entries" not in native:return checkpoint["resources"],"deferred-checkpoint"
@@ -308,19 +367,27 @@ def request(intake,before,profile):
     actor_rows,actor_precision=resource_rows(native["actor"],cp)
     target_rows,target_precision=resource_rows(native["target"],target_cp)
     movement=one([x for x in actor_rows if x["id"]==MOVEMENT_ID and x["level"]==0],"raw movement pool")
-    gaps=["full-build-and-reaction-state","native-collision-and-Vines-contact","target-status-mechanics","individual-disadvantage-face-pair","actor-extra-attack-used-and-recharge-state","target-current-resource-pools"]
+    gaps=["full-build-and-reaction-state","native-collision-and-Vines-contact","target-status-mechanics","individual-disadvantage-face-pair","actor-extra-attack-used-and-recharge-state"]
+    if target_precision!="callback-exact-unrounded":gaps.append("target-current-resource-pools")
+    if actor_precision!="callback-exact-unrounded":gaps.append("actor-current-resource-pools")
+    for role in ("actor","target"):
+        if fresh_status_entries(before,role) is None:gaps.append(role+"-fresh-listed-status-inventory")
+    gaps.append("global-owned-status-completeness")
     if cp_receipt["atomic"] is not True or cp_receipt["ageMs"]:gaps.append("atomic-current-raw-movement-and-status-boundary")
     if profile is None:return None,{"status":"refused","mode":"strict","missingInputs":gaps,"join":intake.join,"rawCheckpoint":cp_receipt,"wholeSceneParityAccepted":False,"nativeRngReproduced":False,"engineInvoked":False}
     c=profile["controlled"]
-    require(c["geometry"]=="explicit-visibility-empty-contact" and c["buildProjection"]=="compiled-plain-spell-operands-only" and c["excludedTargetStatusMechanics"]==sorted(x["id"] for x in enemy["statuses"]),"Unsupported conditional projection or target-status identity conflict")
-    require(c["acceptDeferredCheckpoint"] is True and c["acceptStaleStatusProbe"] is True,"Stale evidence cannot become an exact boundary")
+    owned,status_receipt=status_evidence(intake,before,"actor",cp,"before",profile)
+    target_statuses,target_status_receipt=status_evidence(intake,before,"target",target_cp,"before",profile)
+    intake.before_target_statuses=target_statuses
+    require(c["geometry"]=="explicit-visibility-empty-contact" and c["buildProjection"]=="compiled-plain-spell-operands-only" and c["excludedTargetStatusMechanics"]==sorted(x["id"] for x in target_statuses),"Unsupported conditional projection or target-status identity conflict")
+    require(c["acceptDeferredCheckpoint"] is True,"Stale checkpoint evidence cannot become an exact boundary")
+    if "status_container_entries" not in native["actor"]:require(c["acceptStaleStatusProbe"] is True,"Stale evidence cannot become an exact boundary")
     require(max(cp_receipt["ageMs"],target_cp_receipt["ageMs"])<=profile["timingLimits"]["maxPreCheckpointAgeMs"],"Pre-checkpoint outside explicitly accepted staleness bound")
     actor_field_age=0 if actor_precision=="callback-exact-unrounded" else cp_receipt["fieldSources"]["resources"]["ageMs"]
     target_field_age=0 if target_precision=="callback-exact-unrounded" else target_cp_receipt["fieldSources"]["resources"]["ageMs"]
     resource_source_age(actor_field_age,profile["timingLimits"]["maxBeforeActorResourceFieldSourceAgeMs"],"Before actor")
     resource_source_age(target_field_age,profile["timingLimits"]["maxBeforeTargetResourceFieldSourceAgeMs"],"Before target")
-    owned,status_receipt=status_probe(intake,profile["statusBefore"],caster,cp["statuses"])
-    observed_statuses=[{"instanceId":str(x["instance"]),"ownerId":caster,"statusId":x["id"],"evidenceReference":cp_receipt["evidence"]+"; crosschecked "+profile["statusBefore"]["sha256"]} for x in owned]
+    observed_statuses=[{"instanceId":str(x["instance"]),"ownerId":caster,"statusId":x["id"],"evidenceReference":cp_receipt["evidence"]+"; status evidence "+json.dumps(status_receipt,sort_keys=True)} for x in owned]
     require(set(c["targetUnknownState"])=={"extraAttacks","pactSlots","abilityUses","usedThisTurn","awaitingRecharge"},"Unknown controlled target state field; native pool overrides prohibited")
     resource_def=profile["resourceDefinitions"]
     resource_xml=ET.fromstring(intake.read(Path(resource_def["path"]),resource_def["sha256"]))
@@ -344,7 +411,7 @@ def request(intake,before,profile):
         units.append({"id":unit["uuid"],"team":"Players" if role=="actor" else "Enemies","isPartyMember":role=="actor","level":projection["level"],"hp":unit["max_hp"],"initialHp":unit["hp"],"armorClass":projection["ac"],"strength":projection["abilities"]["str"],"dexterity":projection["abilities"]["dex"],"wisdom":projection["abilities"]["wis"],"charisma":projection["abilities"]["cha"],"movement":s["maximumMovement"],"position":role,"spellSlots":s["spellSlots"],"pactSpellSlots":s["pactSlots"],"resources":s["resources"]})
     rule=profile["rules"];intake.read(Path(rule["path"]),rule["sha256"],maximum=128<<20)
     payload={"schema":1,"scene":{"id":"conditional-saved-trial-"+intake.trial.name,"map":{"nodes":nodes,"visibility":[{"from":"actor","to":"target"}]},"units":units},"before":{"round":before["round"],"activeActorId":caster,"units":[state,target_state],"buildAndReactionEvidence":"controlled: "+c["buildProjection"],"geometryEvidence":"controlled: "+c["geometry"]},"intent":{"kind":"Ability","abilityId":source["Prototype"],"targetId":target},"source":source,"compilerContext":{"level":party["level"],"proficiencyBonus":native["actor"]["proficiency_bonus"],"spellcastingModifier":math.floor((party["abilities"]["int"]-10)/2)},"randomInputs":random,"rulesPath":rule["path"],"rulesSha256":rule["sha256"],"simulatorSha256":SIMULATOR_SHA}
-    qualifications={"rawCheckpoint":cp_receipt,"targetRawCheckpoint":target_cp_receipt,"actorResourceFieldSourceAgeMs":actor_field_age,"targetResourceFieldSourceAgeMs":target_field_age,"resourceAgeQualification":"Latest reconstructed checkpoint ages and consumed field-source ages are distinct; inherited values are not called freshly sampled pools.","actorPoolPrecision":actor_precision,"targetPoolPrecision":target_precision,"statusProbe":status_receipt,"missingNativeInputs":gaps,"controlledFields":c,"profileQualifications":profile["qualifications"],"nativeTargetStatusesRetainedButUnmodeled":enemy["statuses"],"nativeGeometryAdmission":False,"nativeRngReproduced":False,"wholeSceneParityAccepted":False,"experimentalSourceEquivalence":"unproven","afterClientGenerationIndependentlyQualified":False,"afterGenerationLimitation":"Historical AFTER owner binding is a copied poll before the callback; no independently validated post-readiness epoch proof is consumed by this adapter."}
+    qualifications={"rawCheckpoint":cp_receipt,"targetRawCheckpoint":target_cp_receipt,"actorResourceFieldSourceAgeMs":actor_field_age,"targetResourceFieldSourceAgeMs":target_field_age,"resourceAgeQualification":"Latest reconstructed checkpoint ages and consumed field-source ages are distinct; inherited values are not called freshly sampled pools.","actorPoolPrecision":actor_precision,"targetPoolPrecision":target_precision,"statusProbe":status_receipt,"targetStatusEvidence":target_status_receipt,"missingNativeInputs":gaps,"controlledFields":c,"profileQualifications":profile["qualifications"],"nativeTargetStatusesRetainedButUnmodeled":target_statuses,"nativeGeometryAdmission":False,"nativeRngReproduced":False,"wholeSceneParityAccepted":False,"experimentalSourceEquivalence":"unproven","afterClientGenerationIndependentlyQualified":False,"afterGenerationLimitation":"Historical AFTER owner binding is a copied poll before the callback; no independently validated post-readiness epoch proof is consumed by this adapter."}
     return payload,qualifications
 
 def compare(intake,payload,actual,profile):
@@ -365,7 +432,7 @@ def compare(intake,payload,actual,profile):
     caster=payload["before"]["activeActorId"];target=payload["intent"]["targetId"]
     observed_target=one([x for x in intake.before["turn_order"] if x["uuid"]==target],"BEFORE target status projection")
     projected_target=one([x for x in payload["before"]["units"] if x["actorId"]==target],"request target state")
-    check("before.target.statusIds",sorted(x["id"] for x in observed_target["statuses"]),sorted(x["statusId"] for x in projected_target["statuses"]),"known projection exclusion: native target-status mechanics remain unmodeled",kind="coverage-exclusion")
+    check("before.target.statusIds",sorted(x["id"] for x in intake.before_target_statuses),sorted(x["statusId"] for x in projected_target["statuses"]),"known projection exclusion: native target-status mechanics remain unmodeled",kind="coverage-exclusion")
     for role,uuid in (("actor",caster),("target",target)):
         require(after["native"][role]["uuid"]==uuid,"AFTER actor/target identity mismatch")
         view=units[uuid]["view"]
@@ -386,10 +453,10 @@ def compare(intake,payload,actual,profile):
     require(receipt["t"]>=intake.before["finished_ms"],"No post-action raw checkpoint")
     require(receipt["ageMs"]<=profile["timingLimits"]["maxPostCheckpointAgeMs"],"Post checkpoint outside explicitly accepted staleness bound")
     check("actor.rawMovement",movement["amount"],units[caster]["rawMovement"],after_precision)
-    owned,_=status_probe(intake,profile["statusAfter"],caster,cp["statuses"],phase="after",boundary_ms=after["finished_ms"])
-    check("actor.statusIdentities",sorted((x["id"],str(x["instance"])) for x in owned),sorted((x["statusId"],x["instanceId"]) for x in units[caster]["statusInstances"]),"separate post ownership probe plus checkpoint identity crosscheck")
-    target_after=one([x for x in after["turn_order"] if x["uuid"]==target],"AFTER target")
-    check("target.statusIds",sorted(x["id"] for x in target_after["statuses"]),sorted(x["statusId"] for x in units[target]["statusInstances"]),"known projection exclusion, not an unexplained scalar mismatch or evidence of mechanical equivalence",kind="coverage-exclusion")
+    owned,after_status_receipt=status_evidence(intake,after,"actor",cp,"after",profile)
+    check("actor.statusIdentities",sorted((x["id"],str(x["instance"])) for x in owned),sorted((x["statusId"],x["instanceId"]) for x in units[caster]["statusInstances"]),json.dumps(after_status_receipt,sort_keys=True))
+    target_after_statuses,target_after_status_receipt=status_evidence(intake,after,"target",{},"after",profile)
+    check("target.statusIds",sorted(x["id"] for x in target_after_statuses),sorted(x["statusId"] for x in units[target]["statusInstances"]),"known projection exclusion, not mechanical equivalence; "+json.dumps(target_after_status_receipt,sort_keys=True),kind="coverage-exclusion")
     target_cp,target_receipt=intake.resolve_checkpoint(target,after["finished_ms"])
     require(0<=target_receipt["ageMs"]<=profile["timingLimits"]["maxPostCheckpointAgeMs"] and target_receipt["t"]>=intake.before["finished_ms"],"Target post checkpoint outside qualified boundary")
     target_rows,target_precision=resource_rows(after["native"]["target"],target_cp)
@@ -425,7 +492,7 @@ def compare(intake,payload,actual,profile):
             actual_damage[event["detail"]]=actual_damage.get(event["detail"],0)+event["value"]
     check("damage.byType",expected_damage,actual_damage,"native qualified typed damage packets versus actual engine damage event detail/type; unexpected types remain visible")
     check("damage.total",action["result"]["total_damage"],sum(actual_damage.values()),"total damage is separate from the typed comparison")
-    return comparisons,{"actor":receipt,"target":target_receipt,"actorResourceFieldSourceAgeMs":actor_field_age,"targetResourceFieldSourceAgeMs":target_field_age}
+    return comparisons,{"actor":receipt,"target":target_receipt,"actorResourceFieldSourceAgeMs":actor_field_age,"targetResourceFieldSourceAgeMs":target_field_age,"actorStatusEvidence":after_status_receipt,"targetStatusEvidence":target_after_status_receipt}
 
 def run(trial,profile_path,output):
     require(trial.is_dir(),"Explicit trial directory does not exist")
