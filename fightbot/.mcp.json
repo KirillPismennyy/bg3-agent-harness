@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "fightbot": {
+      "command": "uv",
+      "args": ["run", "--project", "../bridge", "python", "fightbot_mcp.py"]
+    }
+  }
+}

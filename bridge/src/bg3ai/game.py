@@ -17,7 +17,10 @@ from typing import Any
 from . import jobpush
 from .luadebug import LuaDebugClient, LuaDebugError
 
-RPC_EXPR = "return Mods.BG3AI.BG3AI.rpc([{eq}[{payload}]{eq}])"
+# Where the mod's table lives: Mods.BG3AI.BG3AI when it runs as a mod; BG3AI when the fightbot loaded it from the
+# Script Extender console (fightbot/FightBotLoad.lua), whose chunks write globals.
+RPC_ROOT = os.environ.get("BG3AI_RPC_ROOT", "Mods.BG3AI.BG3AI")
+RPC_EXPR = "return " + RPC_ROOT + ".rpc([{eq}[{payload}]{eq}])"
 
 
 class GameError(Exception):
@@ -412,7 +415,7 @@ class Game:
                 return [], [], False
             parts = [_long_bracket(json.dumps({"op": op, "args": args or {}}, separators=(",", ":")), "R")
                      for op, args in calls]
-            code = "local R=Mods.BG3AI.BG3AI.rpc return '['.." + "..','..".join(parts) + "..']'"
+            code = "local R=" + RPC_ROOT + ".rpc return '['.." + "..','..".join(parts) + "..']'"
             t0 = time.time()
             try:
                 raw = self.eval(code, context=context, timeout=timeout)

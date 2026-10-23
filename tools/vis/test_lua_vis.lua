@@ -241,6 +241,34 @@ test("characters stay strict (no ray rule)", function()
     eq(V.characterVisible(ctx, "G", V.entity("G"), { 10, 0, 0 }), false)
 end)
 
+-- fightbot (dev.omniscient): nothing is filtered; off again, the strict rules are back
+test("omniscient: an unseen character, an invisible item and a hidden status are shown; HUD toggles off", function()
+    setup()
+    world.G = { pos = { 40, 0, 0 }, comps = { ServerCharacter = {} } }        -- far beyond sight range
+    osiv[key("IsOnStage", "G")] = 1
+    world.T = { pos = { 3, 0, 0 }, comps = { ServerItem = { Invisible = true } } }
+    osiv[key("IsOnStage", "T")] = 1
+    osiv[key("IsInvisible", "T")] = 1
+    ray.fn = floorThen(function() return nil end)
+    eq(V.characterVisible(V.context(), "G", V.entity("G"), { 40, 0, 0 }), false, "strict first")
+    BG3AI.RPC.ops["dev.omniscient"]({ on = true })
+    eq(V.characterVisible(V.context(), "G", V.entity("G"), { 40, 0, 0 }), true, "character")
+    eq(visible("T"), true, "invisible item")
+    world.C = { pos = { 1, 0, 0 }, comps = {} }   -- hidden off-stage stays hidden
+    eq(V.characterVisible(V.context(), "C", V.entity("C"), { 1, 0, 0 }), false, "off stage")
+    local rules = V.rules()
+    for k, v in pairs(rules) do eq(v, false, "rule " .. k) end
+    local realStats = Ext.Stats
+    Ext.Stats = { Get = function() return { DisplayName = "h", StatusPropertyFlags = { "DisablePortraitIndicator" } } end }
+    loca.h = "Technical"
+    local info = V.statusInfo("AI_HELPER_EXTRAATTACK")
+    eq(info and info.name, "AI_HELPER_EXTRAATTACK", "hidden status by id")
+    BG3AI.RPC.ops["dev.omniscient"]({ on = false })
+    eq(V.statusInfo("AI_HELPER_EXTRAATTACK"), nil, "hidden again")
+    Ext.Stats = realStats
+    eq(V.characterVisible(V.context(), "G", V.entity("G"), { 40, 0, 0 }), false, "strict again")
+end)
+
 -- vis V29 (S091 the Netherbrain): a big creature (bounds radius >= V.BIG_R) is seen by a clear ray to its body,
 -- like a large item; a wall in the way still hides it.
 test("a big creature: a clear ray to its body", function()

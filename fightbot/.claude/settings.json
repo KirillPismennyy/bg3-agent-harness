@@ -1,0 +1,7 @@
+{
+  "enableAllProjectMcpServers": true,
+  "permissions": {
+    "allow": ["mcp__fightbot__*"],
+    "deny": ["Bash", "Edit", "Write", "WebFetch", "WebSearch", "NotebookEdit"]
+  }
+}

@@ -19,6 +19,10 @@ BG3AI = BG3AI or {}
 local U = BG3AI.Util
 local V = BG3AI.Visibility or {}
 BG3AI.Visibility = V
+-- fightbot (fightbot/README.md): when true, nothing is filtered: every character and item in the level counts as
+-- seen, the HUD's hiding toggles are off and statuses without a portrait icon are shown by id. Off by default; the
+-- playing agent of the benchmark never turns it on (dev.omniscient is not an agent tool).
+V.OMNISCIENT = V.OMNISCIENT or false
 
 local truthy = U.truthy
 
@@ -133,6 +137,10 @@ end
 
 function V.rules()
     local r = {}
+    if V.OMNISCIENT then   -- the HUD's hiding toggles off: NPC HP, DCs, failed passive rolls all shown
+        for k in pairs(V.RULE) do r[k] = false end
+        return r
+    end
     local ok, list = pcall(Ext.Entity.GetAllEntitiesWithComponent, "RulesetModifiers")
     local mods = ok and list and list[1] and U.comp(list[1], "RulesetModifiers")
     for k, guid in pairs(V.RULE) do
@@ -280,6 +288,7 @@ end
 function V.characterVisible(ctx, uuid, e, pos)
     if ctx.is_party[uuid] then return true end
     if scriptHidden(uuid) then return false end
+    if V.OMNISCIENT then return true end   -- fightbot: no perception rules (dev.omniscient)
     -- A recruited companion waiting at camp (CampPresence, as State.campRoster lists them) while the party is at
     -- camp: each stands at its own spot, often past the 18.5 m sight range and outside the facing cone. S081 03:01:
     -- get_nearby radius 60 at camp listed Withers (16 m) and Scratch, not Karlach, and talk_to Karlach was "not
@@ -439,15 +448,19 @@ end
 function V.itemVisible(ctx, uuid, e, pos)
     e = e or V.entity(uuid)
     pos = pos or (e and V.pos(e))
-    if scriptHidden(uuid) or truthy(V.osi(Osi.IsInvisible, uuid)) then return false end
+    if scriptHidden(uuid) or (not V.OMNISCIENT and truthy(V.osi(Osi.IsInvisible, uuid))) then return false end
     local si = U.comp(e, "ServerItem")
     if si then
-        local ok, hidden = pcall(function() return si.Invisible or si.Invisible2 or si.Destroyed or si.OffStage end)
+        local ok, hidden = pcall(function()
+            if V.OMNISCIENT then return si.Destroyed or si.OffStage end   -- invisible items and traps too
+            return si.Invisible or si.Invisible2 or si.Destroyed or si.OffStage
+        end)
         if ok and hidden then return false end
     end
     if U.comp(e, "InventoryMember") then return false end -- carried / inside a container
     if V.helperItem(uuid) then return false end
     local kind = V.itemKind(uuid, e)
+    if V.OMNISCIENT then return true, kind end
     local interact = truthy(V.osi(Osi.GetCanInteract, uuid))
     local isTrap = truthy(V.osi(Osi.IsTrap, uuid))
     if isTrap and not truthy(V.osi(Osi.IsTrapDiscovered, uuid)) then
@@ -943,7 +956,16 @@ V.statusCache = V.statusCache or {}
 
 function V.statusInfo(id)
     local c = V.statusCache[id]
-    if c ~= nil then return c or nil end
+    if c == nil then c = V.statusInfoUncached(id) end
+    if not c and V.OMNISCIENT and type(id) == "string" and id ~= "" then
+        return { name = id, hidden = true }   -- a status the portrait never shows, by its engine id
+    end
+    return c or nil
+end
+
+function V.statusInfoUncached(id)
+    local c = V.statusCache[id]
+    if c ~= nil then return c end
     local info = false
     local ok, st = pcall(Ext.Stats.Get, id)
     if ok and st then
@@ -1272,5 +1294,12 @@ if BG3AI.RPC then
             calibrated = V.calib.ok, ray_broken = V.rayBroken or false }
     end)
 end
+
+-- dev.omniscient {on=true} -> {on}: the fightbot's switch (see V.OMNISCIENT).
+BG3AI.RPC.register("dev.omniscient", function(args)
+    V.OMNISCIENT = args.on ~= false
+    V.ctxCache, V.statusCache = nil, {}
+    return { on = V.OMNISCIENT }
+end)
 
 return V
