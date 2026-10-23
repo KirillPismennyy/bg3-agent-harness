@@ -10,6 +10,7 @@
 
 CastProbe = CastProbe or { n = 0, subs = {}, pending = {} }
 local P = CastProbe
+P.seen = P.seen or {}
 P.DIR = "FightBotProbe/"
 P.LATER_TICKS = { 2, 10, 30 }   -- re-read the cast entity this many ticks after it appeared
 
@@ -84,16 +85,30 @@ local function save(rec)
     Ext.Utils.Print("[CastProbe] " .. (ok and ("wrote " .. file) or ("cannot write " .. file .. ": " .. tostring(err))))
 end
 
-local function onCasting(caster)
-    local cast
-    pcall(function() cast = caster.SpellCastIsCasting.Cast end)
-    if not cast then return end
+local function onCast(cast, caster, source)
+    local key = tostring(cast)
+    local existing = P.seen[key]
+    if existing then
+        local read = snapshot(cast, source)
+        read.source = source
+        existing.reads[#existing.reads + 1] = read
+        if source == "state_destroy" then save(existing) end
+        return
+    end
     P.n = P.n + 1
+    if not caster then pcall(function() caster = cast.SpellCastState.Caster end) end
     local cu = uuidOf(caster)
-    local rec = { n = P.n, caster = cu, caster_name = cu and nameOf(cu), reads = {} }
+    local rec = { n = P.n, caster = cu, caster_name = cu and nameOf(cu), entity = key, source = source, reads = {} }
+    P.seen[key] = rec
     rec.reads[1] = snapshot(cast, 0)
     pcall(function() rec.spell = cast.SpellCastState.SpellId.Prototype end)
     P.pending[#P.pending + 1] = { rec = rec, cast = cast, ticks = 0, next = 1 }
+end
+
+local function onCasting(caster)
+    local cast
+    pcall(function() cast = caster.SpellCastIsCasting.Cast end)
+    if cast then onCast(cast, caster, "is_casting") end
 end
 
 function P.tick()
@@ -119,12 +134,25 @@ function P.stop()
 end
 
 if Ext.IsServer() and #P.subs == 0 then
-    local ok, id = pcall(Ext.Entity.OnCreate, "SpellCastIsCasting", function(e) pcall(onCasting, e) end)
-    P.subs[#P.subs + 1] = { off = function() Ext.Entity.Unsubscribe(id) end }
+    local function watch(api, component, callback)
+        local ok, id = pcall(api, component, function(e)
+            local worked, err = pcall(callback, e)
+            if not worked then Ext.Utils.Print("[CastProbe] callback error: " .. tostring(err)) end
+        end)
+        if ok then
+            P.subs[#P.subs + 1] = { off = function() Ext.Entity.Unsubscribe(id) end }
+        else
+            Ext.Utils.Print("[CastProbe] cannot watch " .. component .. ": " .. tostring(id))
+        end
+        return ok
+    end
+    local ok = watch(Ext.Entity.OnCreate, "SpellCastIsCasting", onCasting)
+    watch(Ext.Entity.OnCreateDeferred, "SpellCastState", function(e) onCast(e, nil, "state_created_deferred") end)
+    watch(Ext.Entity.OnDestroy, "SpellCastState", function(e) onCast(e, nil, "state_destroy") end)
     local tid = Ext.Events.Tick:Subscribe(function() pcall(P.tick) end)
     P.subs[#P.subs + 1] = { off = function() Ext.Events.Tick:Unsubscribe(tid) end }
     Ext.Utils.Print("[CastProbe] " .. (ok and "watching casts: make one by hand, then one with the fightbot"
-        or ("cannot watch casts: " .. tostring(id))))
+        or "is-casting watcher unavailable; inspect lifecycle watcher diagnostics"))
 elseif not Ext.IsServer() then
     Ext.Utils.PrintWarning("[CastProbe] run this in the server context")
 end
