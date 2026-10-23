@@ -104,3 +104,41 @@ require the existing private trial/profile environment settings plus an explicit
 BG3_REPLAY_TEST_V206_ADAPTER path; unavailable private fixtures visibly skip.
 Configured invalid paths/pins fail. v206 controls reuse the immutable native
 FireBolt trial and preserve its two declared target-status exclusions.
+
+Executed Fire Bolt miss intake
+-----------------------------
+A complete, singular numerical SpellCastEvent can qualify a miss even when
+SpellCastTargetHitEvent and GUID-bound BeforeDealDamage are absent. This route
+requires exactly DamageFlags(Miss,Dodge), native zero total with DamageType None,
+a complete single ranged-spell D20 roll without rerolls, matching requested and
+executed source/GUID, an independent GUID/story/source lifecycle witness joining cast/caster/target
+entity identities across every relevant readable lifecycle observation, and
+unique raw UsingSpellOnTarget/CastedSpell evidence in the bound transaction.
+Same-GUID executed event ambiguity, contradictory positive lifecycle stories,
+incomplete relevant lifecycle reads, or any GUID-bound damage producer refuses.
+Preexecution story0 permits the recorded Osiris/default-ability to requested
+source transition only before execution and before requested-source adoption.
+Ordered reads must not regress from execution story to0, from requested source
+to the initial source, or backward through the qualified ValidationStart,
+MovementSteering, LogicExecutionUpdate, Finished phase sequence. No timestamp
+is inferred for lifecycle reads. The attack additive descriptor must be a signed32 integer;
+it remains metadata and never overrides compiled attack modifiers.
+Unrelated global damage is retained in the stream and cannot be reassigned by
+timestamp. The random tape contains only the native selected d20; no synthetic
+D10 or zero-damage operand is supplied. Native totals, flags and difficulty are
+outcome/route qualification, not calculation overrides.
+
+After the actual API executes, positive action.no_damage=true with absent
+conflicting damage/total_damage fields, the native miss total, and unchanged
+target HP/temp HP corroborate the bounded zero-damage comparison. Missing
+outcome fields alone never establish zero damage. Unsupported critical misses,
+other miss flag combinations and ambiguous events fail closed.
+
+When present, resources.MovementObservation.usable_projection supplies the
+unrounded Guard projection for usable-movement comparisons. It must be valid,
+agree with its unrounded raw observation, mask flag, rounded legacy projection,
+and captured raw resource pool. Rounded consistency mirrors the producer
+floor(x*10+0.5)/10 operation; the comparison operand stays unrounded.
+Failed/malformed present observations refuse;
+only absent observations retain the historical rounded comparison. This is a
+Guard projection, not proof of movement legality or collision equivalence.

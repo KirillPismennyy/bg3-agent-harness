@@ -196,6 +196,78 @@ class Intake:
             r=parent
             a=one([x for x in r["data"].get("actors",[]) if x.get("uuid")==uuid],"checkpoint base actor")
         return merged,{"latestSeq":latest["seq"],"t":latest["t"],"ageMs":before_ms-latest["t"],"atomic":latest["data"].get("atomic"),"chain":chain,"fieldSources":field_sources,"evidence":latest["_evidence"]}
+    def joined_miss_random(self,caster,target,path,event):
+        complete_damage_evidence(event)
+        require(event.get("complete") is True and event.get("component_available") is True and event.get("hit_available") is True and event.get("errors")==[] and event.get("numerical_roll_seen") is True,"Incomplete executed miss event")
+        h=event["Hit"];guid=h["SpellCastGuid"];story=h["StoryActionId"]
+        require(type(story) is int and story>0 and guid==event["CastState"]["SpellCastGuid"]==self.report["evidence"]["requested_cast_guid"],"Miss cast GUID/story conflict")
+        require(self.before["finished_ms"]<event["at_ms"]<=self.after_receipt["started_ms"],"Miss event outside transaction limits")
+        require(h["SpellId"]==event["CastState"]["SpellId"]["Prototype"]==self.intent["spell"]=="Projectile_FireBolt","Unsupported miss prototype")
+        require(scalar(h["EffectFlags"])=="DamageFlags(Miss,Dodge)" and h["TotalDamageDone"]==0 and type(h["TotalDamageDone"]) is int and scalar(h["DamageType"])=="None","Unsupported/conflicting native miss damage flags")
+        conditions=h["ConditionRolls"]
+        require(conditions.get("available") is True and conditions.get("truncated") is False and conditions.get("declared_count")==1,"Ambiguous/truncated miss roll")
+        condition=one(conditions["values"],"miss attack roll");roll=condition["Roll"];desc=roll["Roll"]["Roll"]
+        require(roll.get("available") is True and scalar(condition["RollType"])=="ConditionRollType(AttackRoll)" and condition["SwappedSourceAndTarget"] is False and scalar(h["SpellAttackType"])==scalar(roll["Roll"]["RollType"])=="RangedSpellAttack","Unsupported miss roll type")
+        require(scalar(desc["DiceValue"])=="D20" and desc["AmountOfDices"]==1 and type(desc["DiceAdditionalValue"]) is int and -(2**31)<=desc["DiceAdditionalValue"]<2**31 and desc["DiceNegative"] is False,"Unsupported miss attack descriptor")
+        rerolls=roll["Roll"]["RerollConditions"]
+        require(rerolls.get("available") is True and rerolls.get("declared_count")==0 and rerolls.get("values")==[] and rerolls.get("truncated") is False,"Miss reroll tape unqualified")
+        require(type(roll["Roll"]["Advantage"]) is bool and type(roll["Roll"]["Disadvantage"]) is bool and not (roll["Roll"]["Advantage"] and roll["Roll"]["Disadvantage"]),"Invalid miss roll mode")
+        selected=roll["Result"]["NaturalRoll"]
+        require(type(selected) is int and 1<=selected<=20,"Invalid selected miss d20")
+        require(scalar(roll["Result"]["Critical"])=="None","Critical miss route unsupported")
+        source={k:scalar(v) for k,v in event["CastState"]["SpellId"].items()};source["SpellCastingAbility"]=scalar(event["CastCache"]["SpellCastingAbility"])
+        require(all(source[k]==v for k,v in self.intent["source"].items()),"Executed miss source differs from request")
+        def entity_text(value):
+            if isinstance(value,dict) and "entity" in value:value=value["entity"]
+            value=scalar(value)
+            require(isinstance(value,str) and re.fullmatch(r"Entity \([0-9a-fA-F]{16}\)",value) is not None,"Missing/malformed miss entity identity")
+            return value
+        cast_entity=entity_text(event.get("cast"));caster_entity=entity_text(event["caster"]);target_entity=entity_text(event["target"])
+        require(entity_text(event.get("event_entity"))==cast_entity,"Miss numerical event/cast entity conflict")
+        lifecycle=[]
+        for probe_path,data in self.verified.items():
+            if probe_path.suffix!=".json" or probe_path.parent.name not in {"0","1"}:continue
+            probe=json.loads(data)
+            if probe_path.parent.name=="1" and probe.get("Hit",{}).get("SpellCastGuid")==guid:
+                require(probe_path==path,"Ambiguous same-GUID executed event set for miss")
+            if probe_path.parent.name!="0":continue
+            reads=probe.get("reads",[])
+            relevant=probe.get("entity")==cast_entity or any(x.get("components",{}).get("SpellCastState",{}).get("SpellCastGuid")==guid for x in reads)
+            if not relevant:continue
+            complete_damage_evidence(probe)
+            require(entity_text(probe.get("entity"))==cast_entity and probe.get("caster")==caster and probe.get("spell")==self.intent["spell"],"Miss lifecycle cast/actor/spell conflict")
+            require(isinstance(reads,list) and reads,"Missing miss lifecycle reads")
+            execution_seen=False;requested_source_seen=False;last_phase_rank=-1
+            for read in reads:
+                components=read.get("components",{});state=components.get("SpellCastState",{});server=components.get("ServerSpellCastState",{})
+                require(state.get("SpellCastGuid")==guid and entity_text(state.get("Entity"))==cast_entity and entity_text(state.get("Caster"))==caster_entity,"Miss lifecycle internal cast/caster/GUID conflict")
+                targets=state.get("Targets")
+                require(isinstance(targets,list) and len(targets)==1 and entity_text(targets[0].get("Target"))==target_entity and targets[0].get("TargetingType")=="Projectile","Miss lifecycle target conflict")
+                read_story=server.get("StoryActionId")
+                require(type(read_story) is int and read_story in (0,story),"Miss lifecycle contradictory story identity")
+                phase=scalar(server.get("Phase"))
+                phase_ranks={"ValidationStart":0,"MovementSteering":1,"LogicExecutionUpdate":2,"Finished":3}
+                require(phase in phase_ranks and phase_ranks[phase]>=last_phase_rank,"Miss lifecycle phase regression or unsupported phase")
+                last_phase_rank=phase_ranks[phase]
+                require((not execution_seen or read_story==story) and (phase_ranks[phase]<2 or read_story==story),"Miss lifecycle story regresses after execution phase")
+                execution_seen=execution_seen or read_story==story
+                read_source={k:scalar(v) for k,v in state["SpellId"].items()};read_source["SpellCastingAbility"]=scalar(components["SpellCastCache"]["SpellCastingAbility"])
+                # The explicitly captured preexecution Osiris/default-ability source
+                # may precede the requested experimental source rewrite, at story0.
+                initial_source=dict(source,SourceType="Osiris",Source="00000000-0000-0000-0000-000000000000",ProgressionSource="00000000-0000-0000-0000-000000000000",SpellCastingAbility=self.before["native"]["actor"]["actor_default_ability"])
+                require(read_source==source or (not execution_seen and not requested_source_seen and read_story==0 and phase_ranks[phase]<2 and read_source==initial_source),"Miss lifecycle source conflict or regression")
+                requested_source_seen=requested_source_seen or read_source==source
+                if read_story==story:lifecycle.append(str(probe_path))
+        require(lifecycle,"Missing independent GUID/story/source lifecycle witness for miss")
+        conflicts=[r for r in self.rows if r.get("kind")=="BeforeDealDamage" and r.get("data",{}).get("hit",{}).get("SpellCastGuid")==guid]
+        require(not conflicts,"Miss route has GUID-bound damage producer; unsupported or conflicting evidence")
+        within=[r for r in self.rows if self.before["finished_ms"]<r.get("t",-1)<=self.after_receipt["started_ms"]]
+        using=one([r for r in within if r.get("kind")=="UsingSpellOnTarget" and r["data"].get("caster",{}).get("uuid")==caster and r["data"].get("target",{}).get("uuid")==target and r["data"].get("spell")==self.intent["spell"]],"raw miss target use")
+        casted=one([r for r in within if r.get("kind")=="CastedSpell" and r["data"].get("caster",{}).get("uuid")==caster and r["data"].get("spell")==self.intent["spell"]],"raw miss cast completion")
+        require(using["t"]<=event["at_ms"]<=casted["t"] and using["seq"]<casted["seq"],"Miss raw execution chronology conflict")
+        self.join={"route":"executed-miss","castGuid":guid,"storyActionId":story,"source":source,"hitPath":str(path),"hitTimeMs":event["at_ms"],"lifecycleEvidence":sorted(set(lifecycle)),"rawUseSeq":using["seq"],"rawCastSeq":casted["seq"],"rawDamageProducer":"none for cast GUID in complete bound recorder stream","preOracleUpperReceipt":self.after_receipt,"selectedPairUnavailable":True,"discardedAggregateNotFace":roll["Result"].get("DiscardedDiceTotal")}
+        return source,[{"kind":"selected-d20","actorId":caster,"value":selected,"advantage":roll["Roll"]["Advantage"],"disadvantage":roll["Roll"]["Disadvantage"],"evidenceReference":str(path)+"#/Hit/ConditionRolls/values/0/Roll/Result/NaturalRoll"}]
+
     def joined_random(self,caster,target):
         hits=[]
         for path,data in self.verified.items():
@@ -203,6 +275,18 @@ class Intake:
                 value=json.loads(data)
                 if value.get("component")=="SpellCastTargetHitEvent" and value.get("caster",{}).get("uuid")==caster and value.get("target",{}).get("uuid")==target:
                     hits.append((path,value))
+        misses=[]
+        for path,data in self.verified.items():
+            if path.suffix==".json" and path.parent.name=="1":
+                value=json.loads(data)
+                if value.get("component")=="SpellCastEvent" and value.get("caster",{}).get("uuid")==caster and value.get("target",{}).get("uuid")==target:
+                    misses.append((path,value))
+        if not hits:
+            path,event=one(misses,"executed caster/target native miss event")
+            return self.joined_miss_random(caster,target,path,event)
+        # A separate numerical executed cast event must agree with the hit route.
+        for _,event in misses:
+            require("Miss" not in str(scalar(event.get("Hit",{}).get("EffectFlags"))),"Conflicting executed miss and hit events")
         path,hit=one(hits,"direct caster/target native hit event")
         require(hit.get("complete") is True and hit.get("errors")==[] and hit.get("numerical_roll_seen") is True,"Incomplete native hit evidence")
         guid=hit["Hit"]["SpellCastGuid"]
@@ -484,6 +568,19 @@ def request(intake,before,profile):
     qualifications={"rawCheckpoint":cp_receipt,"targetRawCheckpoint":target_cp_receipt,"actorResourceFieldSourceAgeMs":actor_field_age,"targetResourceFieldSourceAgeMs":target_field_age,"resourceAgeQualification":"Latest reconstructed checkpoint ages and consumed field-source ages are distinct; inherited values are not called freshly sampled pools.","actorPoolPrecision":actor_precision,"targetPoolPrecision":target_precision,"statusProbe":status_receipt,"targetStatusEvidence":target_status_receipt,"missingNativeInputs":gaps,"controlledFields":c,"profileQualifications":profile["qualifications"],"nativeTargetStatusesRetainedButUnmodeled":target_statuses,"nativeGeometryAdmission":False,"nativeRngReproduced":False,"wholeSceneParityAccepted":False,"experimentalSourceEquivalence":"unproven","afterClientGenerationIndependentlyQualified":False,"afterGenerationLimitation":"Historical AFTER owner binding is a copied poll before the callback; no independently validated post-readiness epoch proof is consumed by this adapter."}
     return payload,qualifications
 
+def usable_movement(resources):
+    if "MovementObservation" not in resources:return resources["Movement"][0],"legacy rounded usable movement projection"
+    observation=resources["MovementObservation"]
+    require(isinstance(observation,dict),"Malformed movement observation")
+    raw=observation.get("raw");usable=observation.get("usable_projection")
+    require(isinstance(raw,dict) and isinstance(usable,dict) and raw.get("available") is True and usable.get("available") is True and raw.get("precision")=="unrounded","Unqualified native usable movement observation")
+    for value in (raw.get("current"),raw.get("max"),usable.get("current"),usable.get("max")):
+        require(type(value) in (int,float) and math.isfinite(value) and value>=0,"Invalid native usable movement numeric value")
+    require(type(usable.get("mask_applied")) is bool and usable["max"]==raw["max"] and usable["current"]<=raw["current"]<=raw["max"],"Conflicting usable movement projection")
+    require((usable["mask_applied"] and usable["current"]==0) or (not usable["mask_applied"] and usable["current"]==raw["current"]),"Conflicting movement mask")
+    require(math.floor(usable["current"]*10+0.5)/10==resources["Movement"][0] and math.floor(usable["max"]*10+0.5)/10==resources["Movement"][1],"Rounded/unrounded usable movement projection conflict")
+    return usable["current"],"callback unrounded guard usable projection; movement legality remains unqualified"
+
 def compare(intake,payload,actual,profile):
     # This is the ONLY phase that parses AFTER/action expected outcomes.
     intake.expected_loaded=True
@@ -492,7 +589,7 @@ def compare(intake,payload,actual,profile):
     require(after["owner_binding"]==intake.before["owner_binding"] and after["started_ms"]>intake.before["finished_ms"],"AFTER identity/time binding mismatch")
     require(all(after[k]==v for k,v in intake.after_receipt.items()),"AFTER oracle envelope differs from pre-admission bound receipt")
     require(after["required_reads_ok"] and action["status"]=="done","Expected outcome boundary unqualified")
-    for producer in ("hitTimeMs","damageTimeMs"):
+    for producer in ("hitTimeMs",)+( ("damageTimeMs",) if "damageTimeMs" in intake.join else () ):
         require(intake.before["finished_ms"]<intake.join[producer]<=after["started_ms"],"Native "+producer+" outside strict BEFORE/AFTER transaction bounds")
     require(action["result"]["experimental_source"]["cast_guid"]==intake.join["castGuid"] and action["result"]["target"]["uuid"]==payload["intent"]["targetId"],"Expected outcome action identity mismatch")
     comparisons=[]
@@ -514,7 +611,8 @@ def compare(intake,payload,actual,profile):
     actor_after=one([a for a in after["party"] if a["uuid"]==caster],"AFTER caster projection")
     for native_key,model_key in (("ActionPoint","actions"),("BonusActionPoint","bonusActions"),("ReactionActionPoint","reactionPoints")):
         check("actor."+native_key,actor_after["resources"][native_key][0],units[caster]["view"][model_key])
-    check("actor.usableMovement",actor_after["resources"]["Movement"][0],units[caster]["view"]["movement"])
+    usable,usable_qualification=usable_movement(actor_after["resources"])
+    check("actor.usableMovement",usable,units[caster]["view"]["movement"],usable_qualification)
     cp,receipt=intake.resolve_checkpoint(caster,after["finished_ms"])
     after_rows,after_precision=resource_rows(after["native"]["actor"],cp)
     actor_field_age=0 if after_precision=="callback-exact-unrounded" else receipt["fieldSources"]["resources"]["ageMs"]
@@ -522,6 +620,9 @@ def compare(intake,payload,actual,profile):
     movement=one([x for x in after_rows if x["id"]==MOVEMENT_ID and x["level"]==0],"AFTER raw movement")
     require(receipt["t"]>=intake.before["finished_ms"],"No post-action raw checkpoint")
     require(receipt["ageMs"]<=profile["timingLimits"]["maxPostCheckpointAgeMs"],"Post checkpoint outside explicitly accepted staleness bound")
+    if "MovementObservation" in actor_after["resources"]:
+        observed_raw=actor_after["resources"]["MovementObservation"]["raw"]
+        require(observed_raw["current"]==movement["amount"] and observed_raw["max"]==movement["max"],"Guard movement raw observation conflicts with native pool")
     check("actor.rawMovement",movement["amount"],units[caster]["rawMovement"],after_precision)
     owned,after_status_receipt=status_evidence(intake,after,"actor",cp,"after",profile)
     check("actor.statusIdentities",sorted((x["id"],str(x["instance"])) for x in owned),sorted((x["statusId"],x["instanceId"]) for x in units[caster]["statusInstances"]),json.dumps(after_status_receipt,sort_keys=True))
@@ -550,18 +651,25 @@ def compare(intake,payload,actual,profile):
     check("attack.mode",{"advantage":native_roll["Roll"]["Advantage"],"disadvantage":native_roll["Roll"]["Disadvantage"]},{"advantage":resolution["advantage"],"disadvantage":resolution["disadvantage"]})
     check("attack.hit","Hit" in scalar(hit["Hit"]["EffectFlags"]).split("(")[1].split(")")[0].split(","),resolution["hit"])
     expected_damage={}
-    for packet in action["result"]["damage"]:
+    miss=intake.join.get("route")=="executed-miss"
+    if miss:
+        require(action["result"].get("no_damage") is True and "damage" not in action["result"] and "total_damage" not in action["result"],"Native miss action outcome must explicitly report no_damage with no conflicting damage fields")
+    for packet in action["result"].get("damage",[]) if miss else action["result"]["damage"]:
         require(packet["target"]==target and isinstance(packet["type"],str),"Native damage packet target/type unqualified")
         expected_damage[packet["type"]]=expected_damage.get(packet["type"],0)+packet["amount"]
-    require(sum(expected_damage.values())==action["result"]["total_damage"],"Native damage list/total conflict")
-    raw_hit=intake.by_seq[intake.join["damageSeq"]]["data"]["hit"]
-    require(raw_hit["Damage"]["FinalDamagePerType"]==expected_damage and scalar(raw_hit["DamageType"]) in expected_damage,"Native raw damage producer and independently segregated typed outcome conflict")
+    expected_total=0 if miss else action["result"]["total_damage"]
+    require(sum(expected_damage.values())==expected_total,"Native damage list/total conflict")
+    if miss:
+        require(hit["Hit"]["TotalDamageDone"]==0 and after["native"]["target"]["hp"]==intake.before["native"]["target"]["hp"] and after["native"]["target"]["temp_hp"]==intake.before["native"]["target"]["temp_hp"],"Native miss zero-damage/HP corroboration conflict")
+    else:
+        raw_hit=intake.by_seq[intake.join["damageSeq"]]["data"]["hit"]
+        require(raw_hit["Damage"]["FinalDamagePerType"]==expected_damage and scalar(raw_hit["DamageType"]) in expected_damage,"Native raw damage producer and independently segregated typed outcome conflict")
     actual_damage={}
     for event in events:
         if event["kind"]=="damage" and event["target"]==target:
             actual_damage[event["detail"]]=actual_damage.get(event["detail"],0)+event["value"]
     check("damage.byType",expected_damage,actual_damage,"native qualified typed damage packets versus actual engine damage event detail/type; unexpected types remain visible")
-    check("damage.total",action["result"]["total_damage"],sum(actual_damage.values()),"total damage is separate from the typed comparison")
+    check("damage.total",expected_total,sum(actual_damage.values()),"total damage is separate from the typed comparison")
     return comparisons,{"actor":receipt,"target":target_receipt,"actorResourceFieldSourceAgeMs":actor_field_age,"targetResourceFieldSourceAgeMs":target_field_age,"actorStatusEvidence":after_status_receipt,"targetStatusEvidence":target_after_status_receipt}
 
 def run(trial,profile_path,output,*,adapter_path=None,simulator_sha256=None):
