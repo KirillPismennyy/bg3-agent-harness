@@ -10,6 +10,36 @@ local V = BG3AI.Visibility
 local S = BG3AI.State or {}
 BG3AI.State = S
 
+-- Schema-aware stat reads. ModifierList is a native Object metadata getter;
+-- indexing an undeclared stats attribute logs before Lua pcall can catch it.
+local statSchemas = {}
+local function declaredStatField(st, key)
+    if st == nil then return nil end
+    -- Plain Lua data fixtures/bundles have no native attribute getter at all.
+    if type(st) == "table" and getmetatable(st) == nil then return rawget(st, key) end
+    local okKind, kind = pcall(function() return st.ModifierList end)
+    if not okKind or kind == nil or tostring(kind) == "" then return nil end
+    if key == "ModifierList" then return kind end
+    kind = tostring(kind)
+    local schema = statSchemas[kind]
+    if schema == nil then
+        if not (Ext.Stats and Ext.Stats.GetModifierAttributes) then return nil end
+        local ok, attributes = pcall(Ext.Stats.GetModifierAttributes, kind)
+        if not ok or attributes == nil then return nil end
+        local names, count = {}, 0
+        local mapped = pcall(function()
+            for name in pairs(attributes) do names[tostring(name)] = true; count = count + 1 end
+        end)
+        if not mapped or count == 0 then return nil end
+        schema, statSchemas[kind] = names, names
+    end
+    if not schema[key] then return nil end
+    local ok, value = pcall(function() return st[key] end)
+    if ok then return value end
+    return nil
+end
+-- End schema-aware stat reads.
+
 local truthy = U.truthy
 local osi = V.osi
 local comp = U.comp
@@ -432,16 +462,50 @@ local function resourcesView(res)
     return out
 end
 
+-- Exact raw pool and a separately labelled guard projection. A successful nil
+-- blocker lookup does not prove status absence or movement legality.
+function S.movementObservation(u, res)
+    local row = res and res.Movement
+    local current = row and row.amount
+    local maximum = row and row.max
+    local raw = { available = type(current) == "number" and type(maximum) == "number",
+        source = "ActionResources.Resources (resolved Movement).Amount/MaxAmount", precision = "unrounded" }
+    if type(current) == "number" then raw.current = current end
+    if type(maximum) == "number" then raw.max = maximum end
+    if not raw.available then raw.reason = "movement_current_or_max_not_observed" end
+    local Gd = BG3AI.Guard
+    local readable = Gd and type(Gd.move_blocked) == "function" or false
+    local ok, blocker = false, nil
+    if readable then ok, blocker = pcall(Gd.move_blocked, u) end
+    local check = { available = ok, source = "Guard.move_blocked", status_absence_verified = false }
+    if not readable then check.reason = "blocker_helper_unavailable"
+    elseif not ok then check.reason, check.error = "blocker_lookup_failed", tostring(blocker)
+    elseif blocker then check.outcome, check.blocker = "blocker_reported", tostring(blocker)
+    else check.outcome = "no_blocker_reported" end
+    local projection = { available = raw.available and ok, source = "guard projection of raw pool",
+        mask_applied = ok and not not blocker, movement_legality_verified = false }
+    if projection.available then
+        projection.current = blocker and 0 or current
+        projection.max = maximum
+    else projection.reason = "raw_pool_or_blocker_check_unavailable" end
+    return { raw = raw, usable_projection = projection, blocker_check = check }
+end
+
+function S.movementObservationFor(u)
+    local e = V.entity(u)
+    return S.movementObservation(u, e and resources(e) or {})
+end
+
 -- resourcesView for a character: a member that can't walk (Guard.move_blocked: Lethargic, Stunned …) shows Movement 0
 -- and MoveBlocked = the status. S091 08:30:24: `DISABLED e5 Claude: Lethargic` beside `Move 9/9m`, and the agent
 -- planned a walk that could not happen.
 local function moveView(u, res)
     local out = resourcesView(res)
-    local Gd = BG3AI.Guard
-    local ok, blk = pcall(function() return Gd and Gd.move_blocked and Gd.move_blocked(u) end)
-    if ok and blk and out.Movement then
+    local observation = S.movementObservation(u, res)
+    out.MovementObservation = observation
+    if observation.usable_projection.mask_applied and out.Movement then
         out.Movement[1] = 0
-        out.MoveBlocked = blk
+        out.MoveBlocked = observation.blocker_check.blocker
     end
     return out
 end
@@ -510,16 +574,15 @@ local function spellInfo(id)
     c = false
     local st = osi(Ext.Stats.Get, id)
     if st then
-        local function f(name) local ok, v = pcall(function() return st[name] end); if ok then return v end end
+        local function f(name) return declaredStatField(st, name) end
         local flags = {}
-        pcall(function() for _, x in ipairs(st.SpellFlags) do flags[x] = true end end)
+        pcall(function() for _, x in ipairs(f("SpellFlags") or {}) do flags[x] = true end end)
         c = {
             name = U.loca(f("DisplayName")) or id,
             level = f("Level"), type = tostring(f("SpellType") or ""),
             use_costs = f("UseCosts"), root = f("RootSpellID"), container = f("SpellContainerID"),
             power = f("PowerLevel"), range = f("TargetRadius"), area = f("AreaRadius"),
             concentration = flags.IsConcentration or nil, ritual = nil,
-            save = f("SpellSaveDC") and nil or nil,
             tooltip_attack_save = f("TooltipAttackSave"),
             -- A27: a container with variants and no ContainerSpells list (Gather Your Allies)
             linked = flags.IsLinkedSpellContainer and (f("ContainerSpells") or "") == ""
@@ -562,12 +625,12 @@ local function weaponRanges(e)
             if tostring(inv.InventoryData.Type) == "Equipment" then
                 for slot, it in pairs(inv.InventoryContainer.Items) do
                     local sn = tostring(Ext.Enums.ItemSlot[slot])
-                    local st = Ext.Stats.Get(it.Item.Data.StatsId)
-                    local wr = st and tonumber(st.WeaponRange)
-                    if wr then
-                        local key = ({ MeleeMainHand = "MeleeMainWeaponRange", MeleeOffHand = "MeleeOffHandWeaponRange",
-                            RangedMainHand = "RangedMainWeaponRange", RangedOffHand = "RangedOffHandWeaponRange" })[sn]
-                        if key then r[key] = wr / 100 end
+                    local key = ({ MeleeMainHand = "MeleeMainWeaponRange", MeleeOffHand = "MeleeOffHandWeaponRange",
+                        RangedMainHand = "RangedMainWeaponRange", RangedOffHand = "RangedOffHandWeaponRange" })[sn]
+                    if key then
+                        local st = Ext.Stats.Get(it.Item.Data.StatsId)
+                        local wr = tonumber(declaredStatField(st, "WeaponRange"))
+                        if wr then r[key] = wr / 100 end
                     end
                 end
             end
@@ -685,8 +748,8 @@ end
 -- type, weapon damage, the proficiency it needs. The bridge's economy.py uses these for supplies, junk
 -- selling and gear upgrades (S026: bags full of junk, Sentinel Shield unequipped, food unknown).
 local function statField(st, k)
-    local ok, v = pcall(function() return st[k] end)
-    if not ok or v == nil or v == "" then return nil end
+    local v = declaredStatField(st, k)
+    if v == nil or v == "" then return nil end
     if type(v) == "table" then
         local t = {}
         for _, x in ipairs(v) do t[#t + 1] = tostring(x) end
@@ -710,9 +773,9 @@ local function statsFacts(st, o)
         if spelly:find(k, 1, true) then o.spellgear = true break end
     end
     if kind == "Armor" then
-        o.ac = tonumber(statField(st, "ArmorClass")) or 0
+        o.ac = tonumber(statField(st, "ArmorClass"))
         local plus = tonumber(boosts:match("AC%((%d+)%)"))
-        if plus then o.ac = o.ac + plus end
+        if plus and o.ac ~= nil then o.ac = o.ac + plus end
         o.armor = statField(st, "ArmorType")
         if statField(st, "Shield") == "Yes" then o.shield = true end
         o.prof = statField(st, "Proficiency Group")
@@ -1787,7 +1850,7 @@ timed("state.entity", function(args)
         if not inv then o.pos = pos1(V.pos(e)) end
         local okd, desc = pcall(function()
             local st = Ext.Stats.Get(e.Data.StatsId)
-            return st and U.loca(st.Description) or nil
+            return st and U.loca(declaredStatField(st, "Description")) or nil
         end)
         if okd and desc then o.description = desc end
         if S.lockRead(u) then o.locked = true end

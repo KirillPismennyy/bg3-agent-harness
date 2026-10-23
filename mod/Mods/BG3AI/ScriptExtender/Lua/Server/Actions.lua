@@ -383,6 +383,15 @@ function A.summary(char)
     local function amt(name) local r = snap[name]; return r and U.round(r[0] or 0, 1) or nil end
     out.action, out.bonus, out.reaction = amt("ActionPoint"), amt("BonusActionPoint"), amt("ReactionActionPoint")
     out.movement = amt("Movement")
+    local S = BG3AI.State
+    local observed, observation = pcall(function()
+        assert(S and S.movementObservationFor, "movement observation helper unavailable")
+        return S.movementObservationFor(char)
+    end)
+    out.movement_observation = observed and observation or {
+        raw = { available = false, reason = "movement_observation_unavailable" },
+        usable_projection = { available = false, movement_legality_verified = false },
+        error = tostring(observation), status_absence_verified = false }
     for _, n in ipairs({ "SpellSlot", "WarlockSpellSlot" }) do
         local lv = snap[n]
         if lv then

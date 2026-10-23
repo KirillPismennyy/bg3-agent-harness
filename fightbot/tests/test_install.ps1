@@ -33,4 +33,3 @@ $refused = $false
 try { & (Join-Path $bot 'install.ps1') -ScriptExtenderDir $se } catch { $refused = $_.Exception.Message -like 'Missing probe source:*' }
 if (-not $refused -or (Get-FileHash (Join-Path $se 'BG3AI\Server\sample.lua')).Hash -ne $oldModuleHash) { throw 'missing probe did not refuse before deployment' }
 Write-Output 'Installer probe checks passed: backup, hashes, receipt, capture/recorder preservation and preflight refusal.'
-

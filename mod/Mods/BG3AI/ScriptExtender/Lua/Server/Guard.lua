@@ -16,6 +16,36 @@ local U = BG3AI.Util
 local G = {}
 BG3AI.Guard = G
 
+-- Schema-aware stat reads. ModifierList is a native Object metadata getter;
+-- indexing an undeclared stats attribute logs before Lua pcall can catch it.
+local statSchemas = {}
+local function declaredStatField(st, key)
+    if st == nil then return nil end
+    -- Plain Lua data fixtures/bundles have no native attribute getter at all.
+    if type(st) == "table" and getmetatable(st) == nil then return rawget(st, key) end
+    local okKind, kind = pcall(function() return st.ModifierList end)
+    if not okKind or kind == nil or tostring(kind) == "" then return nil end
+    if key == "ModifierList" then return kind end
+    kind = tostring(kind)
+    local schema = statSchemas[kind]
+    if schema == nil then
+        if not (Ext.Stats and Ext.Stats.GetModifierAttributes) then return nil end
+        local ok, attributes = pcall(Ext.Stats.GetModifierAttributes, kind)
+        if not ok or attributes == nil then return nil end
+        local names, count = {}, 0
+        local mapped = pcall(function()
+            for name in pairs(attributes) do names[tostring(name)] = true; count = count + 1 end
+        end)
+        if not mapped or count == 0 then return nil end
+        schema, statSchemas[kind] = names, names
+    end
+    if not schema[key] then return nil end
+    local ok, value = pcall(function() return st[key] end)
+    if ok then return value end
+    return nil
+end
+-- End schema-aware stat reads.
+
 G.MAX_MOVE_DIST = 60.0      -- metres; farther than a click on screen could reach
 G.MAX_INTERACT_DIST = 40.0  -- metres from the actor for interact/pickup/talk targets
 G.TALK_RANGE = 2.5          -- how close the actor walks before requesting a dialogue
@@ -1531,7 +1561,7 @@ local function weapon_range(char, slot)
     if not item then return nil end
     local name = G.q("GetStatString", item)
     local st = name and Ext.Stats.Get(name)
-    local ok, wr = pcall(function() return st and tonumber(st.WeaponRange) end)
+    local ok, wr = pcall(function() return tonumber(declaredStatField(st, "WeaponRange")) end)
     if ok and wr and wr > 0 then return wr / 100 end
     return nil
 end
@@ -1604,8 +1634,8 @@ local function jumpBoosts(id)
     local c = G._jumpBoosts[id]
     if c ~= nil then return c end
     c = false
-    local ok, s = pcall(function() return tostring(Ext.Stats.Get(id).Boosts or "") end)
-    if ok then
+    local ok, s = pcall(function() return declaredStatField(Ext.Stats.Get(id), "Boosts") end)
+    if ok and type(s) == "string" then
         local k = tonumber(s:match("JumpMaxDistanceMultiplier%(%s*([%d%.]+)%s*%)"))
         local nf = s:find("IgnoreFallDamage", 1, true) ~= nil
         if (k and k > 1) or nf then c = { mult = k and k > 1 and k or 1, no_fall = nf or nil } end
